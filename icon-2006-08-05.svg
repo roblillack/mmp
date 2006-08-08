@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://web.resource.org/cc/"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="744.09448819"
+   height="1052.3622047"
+   id="svg2"
+   sodipodi:version="0.32"
+   inkscape:version="0.44"
+   sodipodi:docbase="/home/rob/Documents/projekte/devel/mp3"
+   sodipodi:docname="icon-2006-08-05.svg">
+  <defs
+     id="defs4">
+    <linearGradient
+       id="linearGradient2829">
+      <stop
+         style="stop-color:white;stop-opacity:0;"
+         offset="0"
+         id="stop2831" />
+      <stop
+         style="stop-color:white;stop-opacity:1;"
+         offset="1"
+         id="stop2833" />
+    </linearGradient>
+    <linearGradient
+       id="linearGradient2777">
+      <stop
+         style="stop-color:#086fca;stop-opacity:1"
+         offset="0"
+         id="stop2779" />
+      <stop
+         style="stop-color:#0c0c0c;stop-opacity:0"
+         offset="1"
+         id="stop2781" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient2777"
+       id="linearGradient2787"
+       x1="1419.1749"
+       y1="826.41333"
+       x2="900.50342"
+       y2="258.89355"
+       gradientUnits="userSpaceOnUse" />
+    <radialGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient2829"
+       id="radialGradient2839"
+       cx="1167.1179"
+       cy="552.73358"
+       fx="1167.1179"
+       fy="552.73358"
+       r="197.72095"
+       gradientTransform="matrix(1,0,0,1.048472,0,-26.79201)"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     gridtolerance="10000"
+     guidetolerance="10"
+     objecttolerance="10"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.75577689"
+     inkscape:cx="1044.9365"
+     inkscape:cy="512.85714"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     inkscape:window-width="872"
+     inkscape:window-height="753"
+     inkscape:window-x="91"
+     inkscape:window-y="102" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="opacity:1;fill:#dedede;fill-opacity:1;fill-rule:nonzero;stroke:black;stroke-width:10;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect2760"
+       width="317.14285"
+       height="337.14285"
+       x="1008.5714"
+       y="383.79074"
+       rx="7"
+       ry="7" />
+    <rect
+       style="opacity:1;fill:black;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:10;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect2775"
+       width="312.49866"
+       height="130.71693"
+       x="1009.5888"
+       y="384.34955" />
+    <path
+       style="fill:none;fill-opacity:0.75;fill-rule:evenodd;stroke:black;stroke-width:10;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       d="M 1325.7142,515.21933 L 1005.7142,515.21933"
+       id="path2764" />
+    <path
+       style="opacity:1;fill:white;fill-opacity:1;fill-rule:nonzero;stroke:white;stroke-width:10;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       d="M 1234.8029,485.36024 L 1284.133,451.66419 L 1235.8604,418.69051 L 1234.8029,485.36024 z "
+       id="rect2766" />
+  </g>
+</svg>
