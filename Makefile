@@ -4,7 +4,7 @@ wings_LIBS      = -L/usr/X11R6/lib -L/usr/local/lib -lWINGs -lXft -lX11 -lwraste
 
 PROGRAM = mmp
 
-OBJECTS = mmp.o
+OBJECTS = mmp.o WMAddOns.o
 
 .SUFFIXES:	.o .c
 
