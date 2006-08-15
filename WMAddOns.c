@@ -9,7 +9,12 @@ typedef struct W_MaskedEvents {
   WMArray *data;
 } W_MaskedEvents;
 
-/* taken from wlist.c */
+/*
+ * The following structure is taken from wlist.c of the version 0.92.0
+ * Window Maker sources. I don't think so but it _may_ fall under the LGPL:
+ *   WINGs is copyright (c) Alfredo K. Kojima and is licensed through the GNU
+ *   Library General Public License (LGPL).
+ */
 typedef struct W_List {
     W_Class widgetClass;
     W_View *view;
