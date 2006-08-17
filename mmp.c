@@ -39,6 +39,9 @@ void loadFiles(char*);
 void nextSong(WMWidget*, void*);
 void stopPlaying(WMWidget*, void*);
 
+int CompareListItems(const void*, const void*);
+void PrintArray(WMArray*);
+
 //Display		*dpy;
 WMWindow  *win;
 WMScreen  *scr;
@@ -54,6 +57,14 @@ int pipeToPlayer[2], pipeFromPlayer[2];
 pid_t childpid;
 int motherkilledit;
 int playmode=STOPPED;
+
+typedef enum ItemFlags {
+  IsFile = 0,
+  IsDirectory = 1,
+  IsALink = 2,
+  IsPlaying = 4
+} ItemFlags;
+  
 
 char *currentdir;
 char teststring[100];
@@ -119,11 +130,17 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
 	}
 }
 
+Bool ExtensionIs(const char *filename, const char *ext) {
+  return (strncasecmp(filename + strlen(filename) - strlen(ext),
+                      ext, strlen(ext)) == 0);
+}
+
 void loadFiles(char *dirname) {
   DIR *dirptr;
   struct dirent *entry;
   char realdirname[PATH_MAX];
   char *buf;
+  WMListItem *item = NULL;
 
   WMClearList(datalist);
   assert(realpath(dirname, realdirname));
@@ -131,17 +148,18 @@ void loadFiles(char *dirname) {
   dirptr = opendir(realdirname);
   if (dirptr) {
     while ((entry = readdir(dirptr))) {
-      if(strcmp(entry->d_name+strlen(entry->d_name)-4, ".mp3")==0) {
-        /* add the file name */
-        WMAddListItem(datalist, entry->d_name);
-      } else if((strcmp(entry->d_name, ".")!=0) && (entry->d_type==DT_DIR)) {
-        /* root dir? don't show .. */
-        if (strcmp(entry->d_name, "..") == 0 && strcmp(realdirname, "/") == 0)
-          continue;
-        /* add " > " to the directory name and add it */
-        buf = wstrconcat(" > ", entry->d_name);
-        WMAddListItem(datalist, buf);
-        wfree(buf);
+      // skip hidden entries and .. and .
+      if (strlen(entry->d_name) < 1 ||
+          entry->d_name[0] == '.') continue;
+      if (ExtensionIs(entry->d_name, ".mp3") ||
+          ExtensionIs(entry->d_name, ".ogg") ||
+          entry->d_type == DT_DIR) {
+        item = WMAddListItem(datalist, entry->d_name);
+        if (entry->d_type == DT_DIR) {
+          item->uflags = IsDirectory;
+        } else {
+          item->uflags = IsFile;
+        }
       }
     }
     closedir(dirptr);
@@ -150,16 +168,21 @@ void loadFiles(char *dirname) {
   wfree(currentdir);
   currentdir = wstrdup(realdirname);
 
-  WMSortListItems(datalist);
+  if (strcmp(realdirname, "/") != 0) {
+    item = WMAddListItem(datalist, "..");
+    item->uflags = IsDirectory;
+  }
+  
+  WMSortListItemsWithComparer(datalist, CompareListItems);
 }
 
 void playSong(WMWidget *self, void *data) {
   char buf[PATH_MAX];
 
   /* selected entry is a dir? */
-  if (strncmp(WMGetListSelectedItem(datalist)->text, " > ", 3)==0) {
+  if (WMGetListSelectedItem(datalist)->uflags && IsDirectory) {
     snprintf(buf, PATH_MAX, "%s/%s", currentdir,
-             WMGetListSelectedItem(datalist)->text+3);
+             WMGetListSelectedItem(datalist)->text);
     loadFiles(buf);
     return;
   }
@@ -236,7 +259,7 @@ void stopPlaying(WMWidget *self, void *data) {
 }
 
 void nextSong(WMWidget *self, void *data) {
-  /*int actnum = WMGetListSelectedItemRow(datalist);
+  int actnum = WMGetListSelectedItemRow(datalist);
 
   stopPlaying(NULL, NULL);
   WMUnselectAllListItems(datalist);
@@ -244,9 +267,9 @@ void nextSong(WMWidget *self, void *data) {
   if (actnum > WMGetListNumberOfRows(datalist) - 1)
     actnum = WMGetListNumberOfRows(datalist) - 1;
   WMSelectListItem(datalist, actnum);
-  playSong(NULL, NULL);*/
+  playSong(NULL, NULL);
 
-  static WMPixmap *appicon = NULL;
+  /*static WMPixmap *appicon = NULL;
   static WMPixmap *appicon_playing = NULL;
   static WMPixmap *appicon_small = NULL;
   static WMPixmap *appicon_smallplaying = NULL;
@@ -273,7 +296,7 @@ void nextSong(WMWidget *self, void *data) {
   printf("new count: %d\n", count);
 
   WMSetApplicationIconPixmap(scr, bla);
-  WMSetWindowMiniwindowPixmap(win, bla);
+  WMSetWindowMiniwindowPixmap(win, bla);*/
 }
 
 void prevSong(WMWidget *self, void *data) {
@@ -328,9 +351,10 @@ void childDead(int sig) {
 }
 
 WMArray* DropDataTypes(WMView *view) {
-  WMArray *res = WMCreateArray(2);
+  WMArray *res = WMCreateArray(3);
   WMReplaceInArray(res, 0, "text/uri-list");
   WMReplaceInArray(res, 1, "text/x-dnd-username");
+  WMReplaceInArray(res, 2, "text/plain");
   return res;
 }
 
@@ -369,6 +393,74 @@ WMData* FetchDragData(WMView *view, char *type) {
   }
   return WMCreateDataWithBytes(NULL, 0);
 }
+
+void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
+                  int state, WMRect *rect) {
+  // ...
+  WMListItem *itemPtr = WMGetListItem(lPtr, index);
+  WMView *view = WMWidgetView(lPtr);
+  WMScreen *screen = WMWidgetScreen(lPtr);
+  Display *dpy = WMScreenDisplay(screen);
+  WMColor *back = (itemPtr->selected ?
+                   WMWhiteColor(screen) :
+                   WMGetWidgetBackgroundColor(lPtr));
+  XFillRectangle(dpy,
+                 d, WMColorGC(back),
+                 0, 0, rect->size.width, rect->size.height);
+
+  WMFont *font = NULL;
+  if (itemPtr->uflags & IsDirectory) {
+    font = WMDefaultBoldSystemFont(screen);
+  } else {
+    font = WMDefaultSystemFont(screen);
+  }
+  W_PaintText(view, d,
+              font,
+              4, 0, rect->size.width, WALeft,
+              WMBlackColor(screen),
+              False, text, strlen(text));
+}
+
+void PrintArray(WMArray* array) {
+  WMListItem *bla;
+  WMArrayIterator i;
+  WM_ITERATE_ARRAY(array, bla, i) {
+    printf("%s\n", bla->text);
+  }
+}
+
+int CompareListItems(const void *item1, const void *item2) {
+  int ignoreCase = 1;
+  int dirsFirst = 1;
+  const WMListItem *iLeft = *(const void**)item1;
+  const WMListItem *iRight = *(const void**)item2;
+
+  if (strcmp(iLeft->text, "..") == 0) return -1;
+  if (strcmp(iRight->text, "..") == 0) return 1;
+
+  if (dirsFirst) {
+    if (iLeft->uflags & IsDirectory) {
+      if (iRight->uflags & IsDirectory) {
+        return ignoreCase ?
+               strcasecmp(iLeft->text, iRight->text) :
+               strcmp(iLeft->text, iRight->text);
+      } else {
+        return -1;
+      }
+    } else {
+      if (iRight->uflags & IsDirectory) {
+        return 1;
+      } else {
+        // both no dir? fall through....
+      }
+    }
+  }
+
+  return ignoreCase ?
+         strcasecmp(iLeft->text, iRight->text) :
+         strcmp(iLeft->text, iRight->text);
+}
+
 
 int main(int argc, char *argv[]) {
   char buf[1024];
@@ -498,6 +590,7 @@ int main(int argc, char *argv[]) {
   WMSetListDoubleAction(datalist, playSong, NULL);
   WMResizeWidget(datalist, 260, 10);
   WMMoveWidget(datalist, 10, WinHeightIfSmall+1);
+  WMSetListUserDrawProc(datalist, DrawListItem);
 
   /* mask mouse events while dragging */
   WMMaskedEvents *mask = WMMaskEvents(WMWidgetView(datalist));
