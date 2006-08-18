@@ -1,8 +1,11 @@
 #include "mmp.h"
 #include "WMAddOns.h"
 
+#include <stdio.h>
 #include <dirent.h>
 #include <assert.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #include "pixmaps/appicon.xpm"
 #include "pixmaps/appicon-playing.xpm"
@@ -25,6 +28,7 @@
 
 // callbacks
 void cbChangeSize(WMWidget*, void*);
+void cbDoubleClick(WMWidget*, void*);
 void cbNextSong(WMWidget*, void*);
 void cbPlaySong(WMWidget*, void*);
 void cbPrevSong(WMWidget*, void*);
@@ -32,21 +36,11 @@ void cbSizeChanged(void*, WMNotification*);
 void cbStopPlaying(WMWidget*, void*);
 void cbQuit(WMWidget*, void*);
 
-// other stuff
-int CompareListItems(const void*, const void*);
-void DrawListItem(WMList*, int, Drawable, char*, int, WMRect*);
-WMArray* DropDataTypes(WMView*);
-WMDragOperationType WantedDropOperation(WMView*);
-Bool AcceptDropOperation(WMView*, WMDragOperationType);
-void BeganDrag(WMView*, WMPoint*);
-void EndedDrag(WMView*, WMPoint*, Bool);
-WMData* FetchDragData(WMView*, char*);
-
 typedef enum ItemFlags {
-  IsFile = 0,
-  IsDirectory = 1,
-  IsALink = 2,
-  IsPlaying = 4
+  IsFile = 1,
+  IsDirectory = 2,
+  IsLink = 4,
+  IsUnsupported = 8
 } ItemFlags;
 
 typedef struct Frontend {
@@ -82,6 +76,17 @@ typedef struct Frontend {
   Bool playing;
   Bool rewind;
 } myFrontend;
+
+// other stuff
+Backend* GetBackendSupportingFile(myFrontend*, const char*);
+int CompareListItems(const void*, const void*);
+void DrawListItem(WMList*, int, Drawable, char*, int, WMRect*);
+WMArray* DropDataTypes(WMView*);
+WMDragOperationType WantedDropOperation(WMView*);
+Bool AcceptDropOperation(WMView*, WMDragOperationType);
+void BeganDrag(WMView*, WMPoint*);
+void EndedDrag(WMView*, WMPoint*, Bool);
+WMData* FetchDragData(WMView*, char*);
 
 // -----------------------------------------------------------------------------
 
@@ -126,7 +131,11 @@ void feSetSongName(myFrontend *f, char *text) {
 void fePlayingStopped(myFrontend *f) {
   if (f->playing) {
     // song may be over, but we want the next :)
-    cbNextSong(NULL, f);
+    if (f->playingSongItem == WMGetListSelectedItem(f->datalist)) {
+      cbNextSong(NULL, f);
+    } else {
+      cbPlaySong(NULL, f);
+    }
   }
 }
 
@@ -258,7 +267,7 @@ Bool feInit(myFrontend *f) {
   WMHangData(f->datalist, (void*)f);
   WMSetListAllowMultipleSelection(f->datalist, 0);
   WMSetListAllowEmptySelection(f->datalist, 0);
-  WMSetListDoubleAction(f->datalist, cbPlaySong, f);
+  WMSetListDoubleAction(f->datalist, cbDoubleClick, f);
   WMResizeWidget(f->datalist, 260, 10);
   WMMoveWidget(f->datalist, 10, WinHeightIfSmall+1);
   WMSetListUserDrawProc(f->datalist, DrawListItem);
@@ -298,22 +307,37 @@ Bool ExtensionIs(const char *filename, const char *ext) {
                       ext, strlen(ext)) == 0);
 }
 
-Bool ExtensionSupported(myFrontend *f, const char *ext) {
-  return True;
+Backend* GetBackendSupportingFile(myFrontend *f, const char *filename) {
+  Backend *b;
+  char *ext, *a;
+  WMArrayIterator i, j;
+
+  if (!f->backends) return NULL;
+
+  // TODO: what to do with files w/o extension?
+  if ((ext = rindex(filename, '.')) && strlen(++ext) > 0) {
+    WM_ITERATE_ARRAY(f->backends, b, i) {
+      WM_ITERATE_ARRAY(beGetSupportedExtensions(b), a, j) {
+        if (strcasecmp(a, ext) == 0) return b;
+      }
+    }
+  }
+
+  return NULL;
 }
 
 void feShowDir(myFrontend *f, char *dirname) {
   DIR *dirptr;
   struct dirent *entry;
   char realdirname[PATH_MAX];
-  char *buf;
+  char buf[PATH_MAX];
   WMListItem *item = NULL;
 
   WMClearList(f->datalist);
   f->playingSongItem = NULL;
 
   if (!realpath(dirname, realdirname)) {
-    perror("unable to expand %s\n", dirname);
+    fprintf(stderr, "unable to expand %s\n", dirname);
     return;
   }
 
@@ -323,18 +347,27 @@ void feShowDir(myFrontend *f, char *dirname) {
       // skip hidden entries and .. and .
       if (strlen(entry->d_name) < 1 ||
           entry->d_name[0] == '.') continue;
-      if (ExtensionSupported(f, "") || entry->d_type == DT_DIR) {
-        item = WMAddListItem(f->datalist, entry->d_name);
-        if (entry->d_type == DT_DIR) {
-          item->uflags = IsDirectory;
+      item = WMAddListItem(f->datalist, entry->d_name);
+      if (entry->d_type == DT_DIR) {
+        item->uflags = IsDirectory;
+      } else if (entry->d_type == DT_LNK) {
+        item->uflags = IsLink;
+        struct stat s;
+        snprintf(buf, PATH_MAX, "%s/%s", realdirname, entry->d_name);
+        if (stat(buf, &s) == 0) {
+          item->uflags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
         } else {
-          item->uflags = IsFile;
-          if (f->playingSongFile && f->playingSongDir &&
-              !strcmp(f->playingSongFile, entry->d_name) &&
-              !strcmp(f->playingSongDir, realdirname)) {
-            f->playingSongItem = item;
-          }
+          fprintf(stderr, "error STATing %s: %s\n", buf, perror);
         }
+      } else {
+        item->uflags = IsFile;
+        if (f->playingSongFile && f->playingSongDir &&
+            !strcmp(f->playingSongFile, entry->d_name) &&
+            !strcmp(f->playingSongDir, realdirname)) {
+          f->playingSongItem = item;
+        }
+        Backend *b = GetBackendSupportingFile(f, entry->d_name);
+        if (!b) item->uflags |= IsUnsupported;
       }
     }
     closedir(dirptr);
@@ -351,17 +384,31 @@ void feShowDir(myFrontend *f, char *dirname) {
   WMSortListItemsWithComparer(f->datalist, CompareListItems);
 }
 
+void cbDoubleClick(WMWidget *self, void *data) {
+  myFrontend *f = (myFrontend*) data;
+  char buf[PATH_MAX];
+
+  /* selected entry is a dir? */
+  if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory) {
+    snprintf(buf, PATH_MAX, "%s/%s", f->currentdir,
+             WMGetListSelectedItem(f->datalist)->text);
+    feShowDir(f, buf);
+    return;
+  } else {
+    cbPlaySong(NULL, f);
+  }
+}
+
 void cbPlaySong(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
   char buf[PATH_MAX];
 
   /* selected entry is a dir? */
-  if (WMGetListSelectedItem(f->datalist)->uflags && IsDirectory) {
-    snprintf(buf, PATH_MAX, "%s/%s", f->currentdir,
-             WMGetListSelectedItem(f->datalist)->text);
-    feShowDir(f, buf);
+  if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory) {
     return;
   }
+
+  cbStopPlaying(NULL, f);
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
   strncpy(buf, WMGetListSelectedItem(f->datalist)->text, PATH_MAX);
@@ -381,21 +428,11 @@ void cbPlaySong(WMWidget *self, void *data) {
   f->currentRatio = 0.0f;
 
   Backend *b;
-  char *ext;
-  WMArrayIterator i, j;
-
-  WM_ITERATE_ARRAY(f->backends, b, i) {
-    // FIXME: extension may not be 3 chars in every case
-    WM_ITERATE_ARRAY(beGetSupportedExtensions(b), ext, j) {
-      printf(".%s\n",ext);
-    }
-    if (WMFindInArray(beGetSupportedExtensions(b), NULL, buf + strlen(buf) - 3)) {
-      bePlay(b, buf);
-      return;
-    }
+  if ((b = GetBackendSupportingFile(f, buf))) {
+    bePlay(b, buf);
+  } else {
+    printf("no suitable backend found for file: %s\n", buf);
   }
-  
-  printf("no suitable backend found for: %s\n", buf + strlen(buf) - 3);
 }
 
 void cbStopPlaying(WMWidget *self, void *data) {
@@ -405,12 +442,13 @@ void cbStopPlaying(WMWidget *self, void *data) {
 
   WMSetLabelText(f->songtitle, APP_LONG);
   WMSetLabelText(f->songartist, "no file loaded.");
-  WMSetLabelText(f->songtime, "©2001-2006 by Robert Lillack");
+  WMSetLabelText(f->songtime, "");
 
   ucfree(f->playingSongDir);
   ucfree(f->playingSongFile);
   f->playingSongItem = NULL;
   f->playing = False;
+  WMRedisplayWidget(f->datalist);
 
   WM_ITERATE_ARRAY(f->backends, b, i) {
     beStop(b);
@@ -566,17 +604,15 @@ void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
   W_PaintText(view, d,
               font,
               4, 0, rect->size.width, WALeft,
-              WMBlackColor(screen),
+              itemPtr->uflags & IsUnsupported ? WMDarkGrayColor(screen) : WMBlackColor(screen),
               False, text, strlen(text));
-}
-
-/*void PrintArray(WMArray* array) {
-  WMListItem *bla;
-  WMArrayIterator i;
-  WM_ITERATE_ARRAY(array, bla, i) {
-    printf("%s\n", bla->text);
+  if (itemPtr->uflags & IsLink) {
+    int tw = WMWidthOfString(font, text, strlen(text));
+    if (tw > rect->size.width - 4)
+      tw = rect->size.width - 4;
+    XDrawLine(dpy, d, WMColorGC(WMDarkGrayColor(screen)), 4, rect->size.height-2, 2 + tw, rect->size.height-2);
   }
-}*/
+}
 
 int CompareListItems(const void *item1, const void *item2) {
   int ignoreCase = 1;
