@@ -144,21 +144,35 @@ WMArray* beGetSupportedExtensions(Backend* b) {
 void handlePlayerInput(int fd, int mask, void *clientData) {
   myBackend *b = (myBackend*)clientData;
   assert(b != NULL);
+#define BUFSIZE 8192
 
-  char bigbuf[8192], *buf, buf2[100], buf3[100], *laststop;
+  char bigbuf[BUFSIZE], *buf, buf2[100], buf3[100], *laststop;
   char *str = NULL, *str_start = NULL, *str_end = NULL;
   int len, a;
 
   //for (a = sizeof(bigbuf) / sizeof(char); a > 0; a--) bigbuf[a-1]='\0';
-  bzero(bigbuf, 8192);
+  bzero(bigbuf, BUFSIZE);
 
-  len = read(b->pipeFromPlayer[0], bigbuf, 8192);
+  len = read(b->pipeFromPlayer[0], bigbuf, BUFSIZE-1);
+  // drop last (incomplete) line, if buffer full
+  if (len == BUFSIZE-1 && bigbuf[BUFSIZE-1] != '\n') {
+    char *i;
+    for (i = &bigbuf[BUFSIZE-2]; i > bigbuf; i--) {
+      if (*i == '\n') {
+        *i = '\0';
+        break;
+      }
+    }
+  }
+  
+  //printf("read %d bytes. bigbuf: %s\n", len, bigbuf);
   for (buf = strtok_r(bigbuf, "\n", &laststop); buf;
        buf = strtok_r(NULL, "\n", &laststop)) {
     //printf("buf: %s\n", buf);
     if (buf[0] == '@') {
       if (buf[1] == 'F') {
         char *sep = NULL;
+        //printf("%s\n", buf);
         //printf("%s / %s = ", strtok_r(buf+3, " \t", &sep), strtok_r(NULL, " \t", &sep));
         float ratio = (float) strtol(strtok_r(buf+3, " ", &sep), NULL, 10);
         ratio = (float) (ratio / (double) (ratio + (double)strtol(strtok_r(NULL, " ", &sep), NULL, 10)));
@@ -175,7 +189,6 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
             buf[strlen(buf)-1] = '\0';
           }
           SetSongName(b, buf+7);
-
           buf[66] = '\0';
           while (strlen(buf+37) > 0 && buf[36+strlen(buf+37)] == ' ') {
             buf[36+strlen(buf+37)] = '\0';

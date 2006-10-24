@@ -213,7 +213,7 @@ Bool feInit(myFrontend *f) {
   WMSetButtonImage(f->prevsongbutton, WMCreatePixmapFromXPMData(f->scr, prev_xpm));
   WMSetButtonImagePosition(f->prevsongbutton, WIPImageOnly);
   WMSetButtonAction(f->prevsongbutton, cbPrevSong, f);
-  WMSetBalloonTextForView("play the previous song.", WMWidgetView(f->prevsongbutton));
+  //WMSetBalloonTextForView("play the previous song.", WMWidgetView(f->prevsongbutton));
   WMSetButtonBordered(f->prevsongbutton, False);
   WMResizeWidget(f->prevsongbutton, 20, 20);
   WMMoveWidget(f->prevsongbutton, 190, 60);
@@ -222,7 +222,7 @@ Bool feInit(myFrontend *f) {
   WMSetButtonImage(f->stopsongbutton, WMCreatePixmapFromXPMData(f->scr, stop_xpm));
   WMSetButtonImagePosition(f->stopsongbutton, WIPImageOnly);
   WMSetButtonAction(f->stopsongbutton, cbStopPlaying, f);
-  WMSetBalloonTextForView("stops playback.", WMWidgetView(f->stopsongbutton));
+  //WMSetBalloonTextForView("stops playback.", WMWidgetView(f->stopsongbutton));
   WMSetButtonBordered(f->stopsongbutton, False);
   WMResizeWidget(f->stopsongbutton, 20, 20);
   WMMoveWidget(f->stopsongbutton, 210, 60);
@@ -231,7 +231,7 @@ Bool feInit(myFrontend *f) {
   WMSetButtonImage(f->playsongbutton, WMCreatePixmapFromXPMData(f->scr, play_xpm));
   WMSetButtonImagePosition(f->playsongbutton, WIPImageOnly);
   WMSetButtonAction(f->playsongbutton, cbPlaySong, f);
-  WMSetBalloonTextForView("play the selected song.", WMWidgetView(f->playsongbutton));
+  //WMSetBalloonTextForView("play the selected song.", WMWidgetView(f->playsongbutton));
   WMSetButtonBordered(f->playsongbutton, False);
   WMResizeWidget(f->playsongbutton, 20, 20);
   WMMoveWidget(f->playsongbutton, 230, 60);
@@ -239,7 +239,7 @@ Bool feInit(myFrontend *f) {
   f->nextsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->nextsongbutton, WMCreatePixmapFromXPMData(f->scr, next_xpm));
   WMSetButtonImagePosition(f->nextsongbutton, WIPImageOnly);
-  WMSetBalloonTextForView("play the next song.", WMWidgetView(f->nextsongbutton));
+  //WMSetBalloonTextForView("play the next song.", WMWidgetView(f->nextsongbutton));
   WMSetButtonAction(f->nextsongbutton, cbNextSong, f);
   WMSetButtonBordered(f->nextsongbutton, False);
   WMResizeWidget(f->nextsongbutton, 20, 20);
@@ -249,7 +249,7 @@ Bool feInit(myFrontend *f) {
   WMSetButtonText(f->quitbutton, "quit");
   WMSetButtonBordered(f->quitbutton, False);
   WMSetButtonAction(f->quitbutton, cbQuit, f);
-  WMSetBalloonTextForView("quit the program.", WMWidgetView(f->quitbutton));
+  //WMSetBalloonTextForView("quit the program.", WMWidgetView(f->quitbutton));
   WMSetButtonFont(f->quitbutton, WMSystemFontOfSize(f->scr, 10));
   WMResizeWidget(f->quitbutton, 30, 15);
   WMMoveWidget(f->quitbutton, 240, WinHeightIfSmall-15);
@@ -259,7 +259,7 @@ Bool feInit(myFrontend *f) {
   WMSetButtonImagePosition(f->sizebutton, WIPImageOnly);
   WMSetButtonBordered(f->sizebutton, False);
   WMSetButtonAction(f->sizebutton, cbChangeSize, f);
-  WMSetBalloonTextForView("show/hide the song list.", WMWidgetView(f->sizebutton));
+  //WMSetBalloonTextForView("show/hide the song list.", WMWidgetView(f->sizebutton));
   WMResizeWidget(f->sizebutton, 30, 15);
   WMMoveWidget(f->sizebutton, 10, WinHeightIfSmall-15);
 
@@ -453,6 +453,20 @@ void cbStopPlaying(WMWidget *self, void *data) {
   WM_ITERATE_ARRAY(f->backends, b, i) {
     beStop(b);
   }
+}
+
+void feMarkFile(myFrontend *f, char *name) {
+  WMUnselectAllListItems(f->datalist);
+  WMArrayIterator i;
+  WMListItem *item;
+  int row = WANotFound;
+  WM_ITERATE_ARRAY (WMGetListItems(f->datalist), item, i) {
+    if (strncmp(name, item->text, strlen(name)) == 0) {
+      row = (int)i;
+      break;
+    }
+  }
+  if (row != WANotFound) WMSelectListItem(f->datalist, row);
 }
 
 void cbNextSong(WMWidget *self, void *data) {

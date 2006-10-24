@@ -2,7 +2,7 @@
 
 #define   APP_LONG    "minimalistic music player"
 #define   APP_SHORT   "mmp"
-#define   APP_VERSION   "v0.2"
+#define   APP_VERSION   "v0.3"
 
 typedef struct Frontend Frontend;
 typedef struct Backend Backend;
