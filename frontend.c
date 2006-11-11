@@ -28,12 +28,20 @@
 
 // callbacks
 void cbChangeSize(WMWidget*, void*);
+void cbClick(WMWidget*, void*);
+void cbClientMessage(XEvent*, void*);
 void cbDoubleClick(WMWidget*, void*);
+void cbFocusChanged(XEvent*, void*);
+void cbLeftWindow(XEvent*, void*);
+void cbKeyPress(XEvent*, void*);
 void cbNextSong(WMWidget*, void*);
 void cbPlaySong(WMWidget*, void*);
 void cbPrevSong(WMWidget*, void*);
 void cbSizeChanged(void*, WMNotification*);
 void cbStopPlaying(WMWidget*, void*);
+void cbPointerMotion(XEvent*, void*);
+void cbSizeChanged(void*, WMNotification*);
+void cbWindowClosed(WMWidget*, void*);
 void cbQuit(WMWidget*, void*);
 
 typedef enum ItemFlags {
@@ -170,23 +178,20 @@ Bool feInit(myFrontend *f) {
   f->win = WMCreateWindow(f->scr, APP_SHORT);
   WMSetWindowTitle(f->win, APP_LONG);
   WMSetWindowCloseAction(f->win, cbQuit, f);
+  WMResizeWidget(f->win, 280, 400);
   WMSetWindowMinSize(f->win, 280, WinHeightIfSmall);
-  WMSetWindowMaxSize(f->win, 280, 2000);
+  //WMSetWindowMaxSize(f->win, 280, 2000);
   WMSetWindowMiniwindowPixmap(f->win, WMCreatePixmapFromXPMData(f->scr, appicon_xpm));
   WMSetWindowMiniwindowTitle(f->win, APP_SHORT);
 
   f->songtitlelabel = WMCreateLabel(f->win);
   WMSetLabelText(f->songtitlelabel, "currently playing:");
   WMSetLabelTextColor(f->songtitlelabel, WMDarkGrayColor(f->scr));
-  WMResizeWidget(f->songtitlelabel, 260, 16);
-  WMMoveWidget(f->songtitlelabel, 10, 15);
 
   f->songtitle = WMCreateLabel(f->win);
   WMSetLabelText(f->songtitle, APP_LONG);
   WMSetLabelTextAlignment(f->songtitle, WARight);
   WMSetLabelTextColor(f->songtitle, WMCreateRGBColor(f->scr, 128<<8, 0, 0, False));
-  WMResizeWidget(f->songtitle, 260, 20);
-  WMMoveWidget(f->songtitle, 10, 40);
   WMSetLabelFont(f->songtitle, WMSystemFontOfSize(f->scr, 18));
 
   f->songartist = WMCreateLabel(f->win);
@@ -194,20 +199,14 @@ Bool feInit(myFrontend *f) {
   WMSetLabelTextAlignment(f->songartist, WARight);
   /*WMSetWidgetBackgroundColor(songartist, WMCreateRGBColor(scr, 222<<8, 0, 0, False));*/
   WMSetLabelTextColor(f->songartist, WMCreateRGBColor(f->scr, 64<<8, 0, 0, False));
-  WMResizeWidget(f->songartist, 150, 15);
-  WMMoveWidget(f->songartist, 120, 25);
 
   f->songtime = WMCreateLabel(f->win);
   WMSetLabelText(f->songtime, "");
   WMSetLabelTextColor(f->songtime, WMDarkGrayColor(f->scr));
-  WMResizeWidget(f->songtime, 100, 16);
-  WMMoveWidget(f->songtime, 10, 65);
 
   f->statuslabel = WMCreateLabel(f->win);
   WMSetLabelTextColor(f->statuslabel, WMDarkGrayColor(f->scr));
   WMSetLabelFont(f->statuslabel, WMSystemFontOfSize(f->scr, 10));
-  WMResizeWidget(f->statuslabel, 200, 14);
-  WMMoveWidget(f->statuslabel, 7, 242);
 
   f->prevsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->prevsongbutton, WMCreatePixmapFromXPMData(f->scr, prev_xpm));
@@ -215,8 +214,6 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->prevsongbutton, cbPrevSong, f);
   //WMSetBalloonTextForView("play the previous song.", WMWidgetView(f->prevsongbutton));
   WMSetButtonBordered(f->prevsongbutton, False);
-  WMResizeWidget(f->prevsongbutton, 20, 20);
-  WMMoveWidget(f->prevsongbutton, 190, 60);
 
   f->stopsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->stopsongbutton, WMCreatePixmapFromXPMData(f->scr, stop_xpm));
@@ -224,8 +221,6 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->stopsongbutton, cbStopPlaying, f);
   //WMSetBalloonTextForView("stops playback.", WMWidgetView(f->stopsongbutton));
   WMSetButtonBordered(f->stopsongbutton, False);
-  WMResizeWidget(f->stopsongbutton, 20, 20);
-  WMMoveWidget(f->stopsongbutton, 210, 60);
 
   f->playsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->playsongbutton, WMCreatePixmapFromXPMData(f->scr, play_xpm));
@@ -233,8 +228,6 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->playsongbutton, cbPlaySong, f);
   //WMSetBalloonTextForView("play the selected song.", WMWidgetView(f->playsongbutton));
   WMSetButtonBordered(f->playsongbutton, False);
-  WMResizeWidget(f->playsongbutton, 20, 20);
-  WMMoveWidget(f->playsongbutton, 230, 60);
 
   f->nextsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->nextsongbutton, WMCreatePixmapFromXPMData(f->scr, next_xpm));
@@ -242,8 +235,6 @@ Bool feInit(myFrontend *f) {
   //WMSetBalloonTextForView("play the next song.", WMWidgetView(f->nextsongbutton));
   WMSetButtonAction(f->nextsongbutton, cbNextSong, f);
   WMSetButtonBordered(f->nextsongbutton, False);
-  WMResizeWidget(f->nextsongbutton, 20, 20);
-  WMMoveWidget(f->nextsongbutton, 250, 60);
 
   f->quitbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonText(f->quitbutton, "quit");
@@ -251,8 +242,6 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->quitbutton, cbQuit, f);
   //WMSetBalloonTextForView("quit the program.", WMWidgetView(f->quitbutton));
   WMSetButtonFont(f->quitbutton, WMSystemFontOfSize(f->scr, 10));
-  WMResizeWidget(f->quitbutton, 30, 15);
-  WMMoveWidget(f->quitbutton, 240, WinHeightIfSmall-15);
 
   f->sizebutton = WMCreateCustomButton(f->win, WBBPushInMask);
   WMSetButtonImage(f->sizebutton, WMCreatePixmapFromXPMData(f->scr, down_xpm));
@@ -260,17 +249,16 @@ Bool feInit(myFrontend *f) {
   WMSetButtonBordered(f->sizebutton, False);
   WMSetButtonAction(f->sizebutton, cbChangeSize, f);
   //WMSetBalloonTextForView("show/hide the song list.", WMWidgetView(f->sizebutton));
-  WMResizeWidget(f->sizebutton, 30, 15);
-  WMMoveWidget(f->sizebutton, 10, WinHeightIfSmall-15);
 
   f->datalist = WMCreateList(f->win);
   WMHangData(f->datalist, (void*)f);
   WMSetListAllowMultipleSelection(f->datalist, 0);
   WMSetListAllowEmptySelection(f->datalist, 0);
   WMSetListDoubleAction(f->datalist, cbDoubleClick, f);
-  WMResizeWidget(f->datalist, 260, 10);
-  WMMoveWidget(f->datalist, 10, WinHeightIfSmall+1);
   WMSetListUserDrawProc(f->datalist, DrawListItem);
+  
+  /* layout */
+  cbSizeChanged(f, NULL);
 
   /* mask mouse events while dragging */
   f->mask = WMMaskEvents(WMWidgetView(f->datalist));
@@ -512,10 +500,13 @@ void cbChangeSize(WMWidget *self, void *data) {
 
 void cbSizeChanged(void *self, WMNotification *notif) {
   myFrontend *f = (myFrontend*)self;
-
-  if (WMWidgetHeight(f->win) <= WinHeightIfSmall + 30) {
-    if (WMWidgetHeight(f->win) != WinHeightIfSmall) {
-      WMResizeWidget(f->win, WMWidgetWidth(f->win), WinHeightIfSmall);
+  int w = WMWidgetWidth(f->win);
+  int h = WMWidgetHeight(f->win);
+  
+  if (h <= WinHeightIfSmall + 30) {
+  	// collapse, if too small
+    if (h != WinHeightIfSmall) {
+      WMResizeWidget(f->win, w, WinHeightIfSmall);
     }
     WMSetButtonImage(f->sizebutton, WMCreatePixmapFromXPMData(f->scr, down_xpm));
     f->bigsize = 0;
@@ -524,11 +515,44 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     WMResizeWidget(f->datalist, WMWidgetWidth(f->datalist),
                    WMWidgetHeight(f->win) - WinHeightIfSmall + 2);
     f->ListHeight = WMWidgetHeight(f->datalist) / WMGetListItemHeight(f->datalist);
-    f->WinHeightIfBig = WMWidgetHeight(f->win);
+    f->WinHeightIfBig = h;
     if (WMGetListSelectedItemRow(f->datalist) >= WMGetListPosition(f->datalist) + f->ListHeight) {
       WMSetListPosition(f->datalist, WMGetListSelectedItemRow(f->datalist) - f->ListHeight + 1);
     }
     f->bigsize = 1;
+  }
+  
+  WMResizeWidget(f->songtitlelabel, w - 20, 16);
+  WMMoveWidget(f->songtitlelabel, 10, 15);
+  
+  WMResizeWidget(f->songtitle, w - 20, 20);
+  WMMoveWidget(f->songtitle, 10, 40);
+  
+  WMResizeWidget(f->songartist, w - 130, 15);
+  WMMoveWidget(f->songartist, 120, 25);
+  
+  WMResizeWidget(f->songtime, 100, 16);
+  WMMoveWidget(f->songtime, 10, 65);
+  WMResizeWidget(f->statuslabel, 200, 14);
+  WMMoveWidget(f->statuslabel, 7, 242);
+  
+  WMResizeWidget(f->prevsongbutton, 20, 20);
+  WMMoveWidget(f->prevsongbutton, w - 90, 60);
+  WMResizeWidget(f->stopsongbutton, 20, 20);
+  WMMoveWidget(f->stopsongbutton, w - 70, 60);
+  WMResizeWidget(f->playsongbutton, 20, 20);
+  WMMoveWidget(f->playsongbutton, w - 50, 60);
+  WMResizeWidget(f->nextsongbutton, 20, 20);
+  WMMoveWidget(f->nextsongbutton, w - 30, 60);
+  
+  WMResizeWidget(f->quitbutton, 30, 15);
+  WMMoveWidget(f->quitbutton, w - 40, WinHeightIfSmall-15);
+  
+  WMResizeWidget(f->sizebutton, 30, 15);
+  WMMoveWidget(f->sizebutton, 10, WinHeightIfSmall-15);
+  if (f->bigsize) {
+    WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
+    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall);
   }
 }
 
