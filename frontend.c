@@ -1,9 +1,11 @@
 #include "mmp.h"
 #include "WMAddOns.h"
 
-#include <stdio.h>
-#include <dirent.h>
 #include <assert.h>
+#include <dirent.h>
+#include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -80,6 +82,8 @@ typedef struct Frontend {
   WMListItem *playingSongItem;
   char *playingSongDir, *playingSongFile;
   float currentRatio;
+  
+  WMUserDefaults* settings;
 
   Bool playing;
   Bool rewind;
@@ -108,6 +112,7 @@ Frontend* feCreate() {
   f->playingSongItem = NULL;
   f->playing = False;
   f->rewind = False;
+  f->settings = NULL;
   return f;
 }
 
@@ -165,6 +170,36 @@ void feSetCurrentPosition(myFrontend *f, float r, unsigned int passed, unsigned 
   }
 }
 
+void loadConfig(myFrontend *f) {
+  if (f->settings == NULL) {
+    char conf[PATH_MAX+1];
+    snprintf(conf, PATH_MAX, "%s/.mmprc", getenv("HOME"));
+    f->settings = WMGetDefaultsFromPath(conf);
+  }
+  
+  int w = WMGetUDIntegerForKey(f->settings, "windowWidth");
+  if (w == 0) w = 280;
+  int h = WMGetUDIntegerForKey(f->settings, "windowHeight");
+  if (h == 0) h = 400;
+  WMResizeWidget(f->win, w, h);
+  
+  WMSetWindowInitialPosition(f->win,
+    WMGetUDIntegerForKey(f->settings, "windowPosX"),
+    WMGetUDIntegerForKey(f->settings, "windowPosY"));
+}
+
+void saveConfig(myFrontend *f) {
+  WMSetUDIntegerForKey(f->settings,
+                       WMWidgetWidth(f->win), "windowWidth");
+  WMSetUDIntegerForKey(f->settings,
+                       WMWidgetHeight(f->win), "windowHeight");
+  WMPoint p = WMGetViewScreenPosition(WMWidgetView(f->win));
+  WMSetUDIntegerForKey(f->settings, p.x, "windowPosX");
+  WMSetUDIntegerForKey(f->settings, p.y, "windowPosY");
+  WMSetUDStringForKey(f->settings, f->currentdir, "currentPath");
+  WMSaveUserDefaults(f->settings);
+}
+
 Bool feInit(myFrontend *f) {
   f->dpy = XOpenDisplay(NULL);
   //scr = WMCreateSimpleApplicationScreen(dpy);
@@ -178,7 +213,7 @@ Bool feInit(myFrontend *f) {
   f->win = WMCreateWindow(f->scr, APP_SHORT);
   WMSetWindowTitle(f->win, APP_LONG);
   WMSetWindowCloseAction(f->win, cbQuit, f);
-  WMResizeWidget(f->win, 280, 400);
+  //WMResizeWidget(f->win, 280, 400);
   WMSetWindowMinSize(f->win, 280, WinHeightIfSmall);
   //WMSetWindowMaxSize(f->win, 280, 2000);
   WMSetWindowMiniwindowPixmap(f->win, WMCreatePixmapFromXPMData(f->scr, appicon_xpm));
@@ -257,6 +292,9 @@ Bool feInit(myFrontend *f) {
   WMSetListDoubleAction(f->datalist, cbDoubleClick, f);
   WMSetListUserDrawProc(f->datalist, DrawListItem);
   
+  loadConfig(f);
+  //WMEnableUDPeriodicSynchronization(f->settings, True);
+  
   /* layout */
   cbSizeChanged(f, NULL);
 
@@ -323,6 +361,11 @@ void feShowDir(myFrontend *f, char *dirname) {
 
   WMClearList(f->datalist);
   f->playingSongItem = NULL;
+
+  if (dirname == NULL) {
+    dirname = WMGetUDStringForKey(f->settings, "currentPath");
+    if (dirname == NULL) dirname = ".";    
+  }
 
   if (!realpath(dirname, realdirname)) {
     fprintf(stderr, "unable to expand %s\n", dirname);
@@ -560,6 +603,7 @@ void cbQuit(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
   cbStopPlaying(NULL, f);
   
+  saveConfig(f);
   exit(0);
 }
 

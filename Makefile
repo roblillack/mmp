@@ -4,10 +4,12 @@ wings_LIBS      = -L/usr/X11R6/lib -L/usr/local/lib -lWINGs -lXft -lX11 -lwraste
 
 PROGRAM = mmp
 
+#OBJECTS = mmp.o WMAddOns.o backend.o frontend.o
 OBJECTS = mmp.o WMAddOns.o backend_mplayer.o frontend.o
 
 .SUFFIXES:	.o .c
 
+# -std=c99
 .c.o :
 	$(CC) -g -c $(wings_INCS) -o $@ $<
 

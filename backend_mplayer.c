@@ -1,6 +1,7 @@
 #include "mmp.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,7 @@ typedef struct Backend {
   int pipeToPlayer[2],
       pipeFromPlayer[2];
   pid_t childPid;
+  Bool childLives;
   Bool forcedKill;
   Bool isPlaying;
   WMHandlerID playerHandlerID;
@@ -115,12 +117,15 @@ void bePlay(mplayerBackend *b, char *filename) {
   /* now send the file to play to the child process */
   /*snprintf(buf, PATH_MAX, "L %s\n", filename);
   write(b->pipeToPlayer[1], buf, strlen(buf));*/
-
+  
+  b->childLives = True;
   b->isPlaying = True;
 }
 
 void beStop(mplayerBackend* b) {
+  printf("BESTOP\n");
   if (b->childPid) {
+    printf("KILLING\n");
     b->forcedKill = True;
     kill(b->childPid, SIGINT);
     kill(b->childPid, SIGTERM);
@@ -134,7 +139,7 @@ void beStop(mplayerBackend* b) {
 }
 
 WMArray* beGetSupportedExtensions(Backend* b) {
-  WMArray* types = WMCreateArray(10);
+  WMArray* types = WMCreateArray(11);
   WMAddToArray(types, "mp3");
   WMAddToArray(types, "ogg");
   WMAddToArray(types, "flac");
@@ -145,6 +150,7 @@ WMArray* beGetSupportedExtensions(Backend* b) {
   WMAddToArray(types, "mpg");
   WMAddToArray(types, "flv");
   WMAddToArray(types, "wmv");
+  WMAddToArray(types, "mov");
   return types;
 }
 
@@ -182,12 +188,18 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
   assert(b != NULL);
 #define BUFSIZE 8192
 
-  char bigbuf[BUFSIZE], *buf, buf2[100], buf3[100], *laststop;
-  char *str = NULL, *str_start = NULL, *str_end = NULL;
-  int len, a;
+  char bigbuf[BUFSIZE];   // the whole buffer
+  char *buf;              // pointer the line we work with
+  char *laststop = NULL;
+  //char *str = NULL, *str_start = NULL, *str_end = NULL;
+  int len; //, a;
+  
+  if (b->childLives == False) {
+    PlayingStopped(b);
+  }
+  
 
-  //for (a = sizeof(bigbuf) / sizeof(char); a > 0; a--) bigbuf[a-1]='\0';
-  bzero(bigbuf, BUFSIZE);
+  //bzero(bigbuf, BUFSIZE);
 
   len = read(b->pipeFromPlayer[0], bigbuf, BUFSIZE-1);
   // drop last (incomplete) line, if buffer full
@@ -199,6 +211,8 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
         break;
       }
     }
+  } else {
+    bigbuf[len] = '\0';
   }
   
   //printf("read %d bytes. bigbuf: %s\n", len, bigbuf);
@@ -207,8 +221,12 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
     //printf("buf: %s\n", buf);
 
     if (strncmp(buf, "A: ", 3) == 0) {
+      // audio clips:
       // A:  36.3 (36.2) of 418.0 (06:58.0)  1.5%
-      printf(">> %s\n", buf);
+      // A:  79.2 (01:19.2) of 418.0 (06:58.0)  1.0%
+      // video clips:
+      // A:   0.6 V:   0.4 A-V:  0.166 ct:  0.040  13/ 13 ??% ??% ??,?% 7 0
+      //printf(">> %s\n", buf);
       char *start;
       char *end;
       double ratio1, ratio2;
@@ -220,43 +238,25 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
         if (start) {
           ratio1 += (double) strtol(start, &end, 10) / 10.0;
           secpassed = (unsigned int) floor(ratio1);
-          start = findNextNumber(end, 2);
-          ratio2 = (double) strtol(start, &end, 10);
-          start = findNextNumber(end, 0);
-          if (start) {
-            ratio2 += (double) strtol(start, NULL, 10) / 10.0;
-            sectotal = (unsigned int) floor(ratio2);
-            SetCurrentPosition(b, (float)(ratio1/ratio2), secpassed, sectotal);
+          end = strstr(end, " of ");
+          if (end) {
+            start = findNextNumber(end, 0);
+            ratio2 = (double) strtol(start, &end, 10);
+            start = findNextNumber(end, 0);
+            if (start) {
+              ratio2 += (double) strtol(start, NULL, 10) / 10.0;
+              sectotal = (unsigned int) floor(ratio2);
+              SetCurrentPosition(b, (float)(ratio1/ratio2), secpassed, sectotal);
+            }
           }
         }
       }
+    } else if (strncmp(buf, " Artist: ", 9) == 0) {
+      SetArtist(b, buf+9);
+    } else if (strncmp(buf, " Title: ", 8) == 0) {
+      SetSongName(b, buf+8);
     } else if (buf[0] == '@') {
-      if (buf[1] == 'F') {
-        char *sep = NULL;
-        //printf("%s\n", buf);
-        //printf("%s / %s = ", strtok_r(buf+3, " \t", &sep), strtok_r(NULL, " \t", &sep));
-        float ratio = (float) strtol(strtok_r(buf+3, " ", &sep), NULL, 10);
-        ratio = (float) (ratio / (double) (ratio + (double)strtol(strtok_r(NULL, " ", &sep), NULL, 10)));
-        unsigned int secpassed = (unsigned int) strtol(strtok_r(NULL, " ", &sep), NULL, 10);
-        unsigned int sectotal = (unsigned int) (secpassed + strtol(strtok_r(NULL, " ", &sep), NULL, 10));
-        //printf("%.03f\n", ratio);
-        SetCurrentPosition(b, ratio, secpassed, sectotal);
-      } else if (buf[1] == 'I') {
-        /* format: "@I ID3:<30-chars-songname><30-chars-artist><32-chars-year???><genre>"
-                           ^ buf+7            ^ buf+37         ^ buf+67          ^ buf+99 */
-        if (strncmp(buf+3, "ID3", 3) == 0) {
-          buf[36] = '\0';
-          while (strlen(buf+7) > 0 && buf[strlen(buf)-1] == ' ') {
-            buf[strlen(buf)-1] = '\0';
-          }
-          SetSongName(b, buf+7);
-          buf[66] = '\0';
-          while (strlen(buf+37) > 0 && buf[36+strlen(buf+37)] == ' ') {
-            buf[36+strlen(buf+37)] = '\0';
-          }
-          SetArtist(b, buf+37);
-        }
-      } else if(buf[1]=='P' && buf[3]=='0') {
+      if(buf[1]=='P' && buf[3]=='0') {
         //if (!motherkilledit) nextSong(NULL, NULL);
         PlayingStopped(b);
       } else if(buf[1]=='R') {
@@ -264,9 +264,9 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
       } else if(buf[1]=='S') {
         // ?
       } else {
-        printf("INPUT: %s\n", buf);
+        //printf("INPUT: %s\n", buf);
       }
-    } else printf("UNKNOWN: %s\n", buf);
+    } //else printf("UNKNOWN: %s\n", buf);
   }
 }
 
@@ -307,7 +307,9 @@ void SetCurrentPosition(mplayerBackend *b, float r, unsigned int p, unsigned int
 }
 
 void handleSigchld(int sig) {
+  printf("SIGCHLD\n");
   if (firstBackend) {
-    PlayingStopped(firstBackend);
+    //PlayingStopped(firstBackend);
+    firstBackend->childLives = False;
   }
 }

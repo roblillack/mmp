@@ -1,4 +1,5 @@
 #include <mmp.h>
+#include <string.h>
 #include <sys/stat.h>
 
 int main(int argc, char *argv[]) {
@@ -40,7 +41,7 @@ int main(int argc, char *argv[]) {
       feShowDir(fe, ".");
     }
   } else {
-    feShowDir(fe, ".");
+    feShowDir(fe, NULL);
   }
   feRun(fe);
 
