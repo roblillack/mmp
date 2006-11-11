@@ -1,3 +1,6 @@
+#ifndef WMADDONS__H
+#define WMADDONS__H
+
 #include <WINGs/WINGs.h>
 
 typedef struct W_MaskedEvents WMMaskedEvents;
@@ -5,3 +8,11 @@ typedef struct W_MaskedEvents WMMaskedEvents;
 WMMaskedEvents* WMMaskEvents(WMView*);
 void WMFreeMaskedEvents(WMMaskedEvents*);
 
+Window WMGetLeader(WMScreen*);
+void WMWindowChangeStyle(WMWindow*,int);
+
+Atom WMGetXdndPositionAtom(WMScreen*);
+Atom WMGetXdndLeaveAtom(WMScreen*);
+void WMScreenAbortDrag(WMScreen*);
+Window WMGetRootWin(WMScreen*);
+#endif

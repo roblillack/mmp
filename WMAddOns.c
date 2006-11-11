@@ -1,3 +1,6 @@
+#include <X11/Xlib.h>
+#include <X11/Xmd.h>
+
 #include <WINGs/WINGsP.h>
 #include "WMAddOns.h"
 
@@ -42,7 +45,68 @@ typedef struct W_List {
         unsigned int buttonPressed:1;
         unsigned int buttonWasPressed:1;
     } flags;
-} List;
+} W_List;
+
+typedef struct W_Window {
+    W_Class widgetClass;
+    W_View *view;
+
+    struct W_Window *nextPtr;          /* next in the window list */
+
+    struct W_Window *owner;
+
+    char *title;
+
+    WMPixmap *miniImage;               /* miniwindow */
+    char *miniTitle;
+
+    char *wname;
+
+    WMSize resizeIncrement;
+    WMSize baseSize;
+    WMSize minSize;
+    WMSize maxSize;
+    WMPoint minAspect;
+    WMPoint maxAspect;
+
+    WMPoint upos;
+    WMPoint ppos;
+
+    WMAction *closeAction;
+    void *closeData;
+
+    int level;
+
+    struct {
+        unsigned style:4;
+        unsigned configured:1;
+        unsigned documentEdited:1;
+
+        unsigned setUPos:1;
+        unsigned setPPos:1;
+        unsigned setAspect:1;
+    } flags;
+} W_Window;
+
+typedef struct {
+    CARD32 flags;
+    CARD32 window_style;
+    CARD32 window_level;
+    CARD32 reserved;
+    Pixmap miniaturize_pixmap;         /* pixmap for miniaturize button */
+    Pixmap close_pixmap;               /* pixmap for close button */
+    Pixmap miniaturize_mask;           /* miniaturize pixmap mask */
+    Pixmap close_mask;                 /* close pixmap mask */
+    CARD32 extra_flags;
+} GNUstepWMAttributes;
+
+#define GSWindowStyleAttr       (1<<0)
+#define GSWindowLevelAttr       (1<<1)
+#define GSMiniaturizePixmapAttr (1<<3)
+#define GSClosePixmapAttr       (1<<4)
+#define GSMiniaturizeMaskAttr   (1<<5)
+#define GSCloseMaskAttr         (1<<6)
+#define GSExtraFlagsAttr        (1<<7)
 
 void W_MaskedEventHandler(XEvent *event, void *data) {
   W_MaskedEvents *events = (W_MaskedEvents*)data;
@@ -56,8 +120,8 @@ void W_MaskedEventHandler(XEvent *event, void *data) {
     } else {
       /* *cough* evil *cough* hack... */
       if (W_CLASS(events->view->self) == WC_List) {
-        ((List*)(events->view->self))->flags.buttonWasPressed = 0;
-        ((List*)(events->view->self))->flags.buttonPressed = 0;
+        ((W_List*)(events->view->self))->flags.buttonWasPressed = 0;
+        ((W_List*)(events->view->self))->flags.buttonPressed = 0;
       }
     }
   }
@@ -102,4 +166,76 @@ void WMFreeMaskedEvents(WMMaskedEvents* maskev) {
   WMFreeArray(mask->data);
   wfree(mask);
   return;
+}
+
+Window WMGetLeader(W_Screen *scr) {
+  return scr->groupLeader;
+}
+
+void WMWindowChangeStyle(W_Window *win, int style) {
+  if (win->flags.style == style) return;
+  XFlush(win->view->screen->display);
+  win->flags.style = style;
+  if (win->view->flags.realized) {
+    WMSetWindowLevel(win, WMNormalWindowLevel);
+  /*  GNUstepWMAttributes data;
+    data.flags = GSWindowStyleAttr; // GSWindowStyleAttr
+    data.window_style = style;
+    XChangeProperty(win->view->screen->display, WMWidgetXID(win), win->view->screen->attribsAtom,
+                    win->view->screen->attribsAtom, 32, PropModeReplace, (unsigned char*)&data, 9);
+  }
+  if (win->view->flags.mapped) {
+    // FIXME: this does not work :(
+    XPropertyEvent xev;
+    memset(&xev, 0, sizeof(XPropertyEvent));
+    xev.type = PropertyNotify;
+    xev.state = PropertyNewValue;
+    xev.atom = win->view->screen->attribsAtom;
+    XSendEvent(win->view->screen->display, win->view->screen->rootWin, False, PropertyChangeMask, (XEvent*)&xev);
+    //WMPoint pos = win->view->ppos;
+    //WMUnmapWidget(win);
+    //WMSetWindowInitialPosition(win, pos.x, pos.y);
+    //WMMapWidget(win);*/
+  }
+}
+
+void WMScreenAbortDrag(W_Screen *screen) {
+  if (!screen || !screen->dragInfo.sourceInfo) return;
+  W_DragSourceInfo *source = screen->dragInfo.sourceInfo;
+
+  W_DragSourceStopTimer();
+
+  // inform the other client
+  if (source->destinationWindow)
+    W_SendDnDClientMessage(screen->display, source->destinationWindow,
+                           screen->xdndLeaveAtom, WMViewXID(source->sourceView), 0, 0, 0, 0);
+
+  WMDeleteSelectionHandler(source->sourceView, screen->xdndSelectionAtom, CurrentTime);
+  wfree(source->selectionProcs);
+
+  if (source->sourceView->dragSourceProcs->endedDrag)
+    source->sourceView->dragSourceProcs->endedDrag(source->sourceView, &source->imageLocation, False);
+
+  if (source->icon)
+    XDestroyWindow(screen->display, source->icon);
+
+  if (source->dragCursor != None) {
+    XDefineCursor(screen->display, screen->rootWin, screen->defaultCursor);
+    XFreeCursor(screen->display, source->dragCursor);
+  }
+
+  wfree(source);
+  screen->dragInfo.sourceInfo = NULL;
+}
+
+Atom WMGetXdndPositionAtom(W_Screen *screen) {
+  return screen->xdndPositionAtom;
+}
+
+Atom WMGetXdndLeaveAtom(W_Screen *screen) {
+  return screen->xdndLeaveAtom;
+}
+
+Window WMGetRootWin(W_Screen *screen) {
+  return screen->rootWin;
 }
