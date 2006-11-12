@@ -50,7 +50,8 @@ typedef enum ItemFlags {
   IsFile = 1,
   IsDirectory = 2,
   IsLink = 4,
-  IsUnsupported = 8
+  IsBrokenLink = 8,
+  IsUnsupported = 16
 } ItemFlags;
 
 typedef struct Frontend {
@@ -87,6 +88,7 @@ typedef struct Frontend {
 
   Bool playing;
   Bool rewind;
+  Bool showUnsupportedFiles;
 } myFrontend;
 
 // other stuff
@@ -113,6 +115,8 @@ Frontend* feCreate() {
   f->playing = False;
   f->rewind = False;
   f->settings = NULL;
+  f->WinHeightIfBig = 0;
+  f->showUnsupportedFiles = False;
   return f;
 }
 
@@ -186,6 +190,9 @@ void loadConfig(myFrontend *f) {
   WMSetWindowInitialPosition(f->win,
     WMGetUDIntegerForKey(f->settings, "windowPosX"),
     WMGetUDIntegerForKey(f->settings, "windowPosY"));
+    
+  f->rewind = WMGetUDBoolForKey(f->settings, "repeatMode");
+  f->showUnsupportedFiles = WMGetUDBoolForKey(f->settings, "showUnsupportedFiles");
 }
 
 void saveConfig(myFrontend *f) {
@@ -197,6 +204,8 @@ void saveConfig(myFrontend *f) {
   WMSetUDIntegerForKey(f->settings, p.x, "windowPosX");
   WMSetUDIntegerForKey(f->settings, p.y, "windowPosY");
   WMSetUDStringForKey(f->settings, f->currentdir, "currentPath");
+  WMSetUDBoolForKey(f->settings, f->rewind, "repeatMode");
+  WMSetUDBoolForKey(f->settings, f->showUnsupportedFiles, "showUnsupportedFiles");
   WMSaveUserDefaults(f->settings);
 }
 
@@ -378,28 +387,40 @@ void feShowDir(myFrontend *f, char *dirname) {
       // skip hidden entries and .. and .
       if (strlen(entry->d_name) < 1 ||
           entry->d_name[0] == '.') continue;
-      item = WMAddListItem(f->datalist, entry->d_name);
+      int flags = 0;
       if (entry->d_type == DT_DIR) {
-        item->uflags = IsDirectory;
+        flags = IsDirectory;
       } else if (entry->d_type == DT_LNK) {
-        item->uflags = IsLink;
+          flags = IsLink;
         struct stat s;
         snprintf(buf, PATH_MAX, "%s/%s", realdirname, entry->d_name);
         if (stat(buf, &s) == 0) {
-          item->uflags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
+          flags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
         } else {
-          fprintf(stderr, "error STATing %s: %s\n", buf, perror);
+          flags |= IsBrokenLink;
+          //fprintf(stderr, "error STATing %s: %s\n", buf, perror);
         }
-      } else {
-        item->uflags = IsFile;
+      } else if (entry->d_type == DT_REG) {
+        flags = IsFile;
         if (f->playingSongFile && f->playingSongDir &&
             !strcmp(f->playingSongFile, entry->d_name) &&
             !strcmp(f->playingSongDir, realdirname)) {
           f->playingSongItem = item;
         }
-        Backend *b = GetBackendSupportingFile(f, entry->d_name);
-        if (!b) item->uflags |= IsUnsupported;
+      } else {
+      	flags = IsBrokenLink;
+      	// no link, no dir, no regular file...
       }
+      
+      if (flags & IsFile && !GetBackendSupportingFile(f, entry->d_name)) {
+      	if (f->showUnsupportedFiles) {
+          flags |= IsUnsupported;
+      	} else {
+          continue;
+      	}
+      }
+      item = WMAddListItem(f->datalist, entry->d_name);
+      item->uflags = flags;
     }
     closedir(dirptr);
   }
@@ -434,8 +455,9 @@ void cbPlaySong(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
   char buf[PATH_MAX];
 
-  /* selected entry is a dir? */
-  if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory) {
+  /* selected entry not a file? */
+  if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory ||
+      WMGetListSelectedItem(f->datalist)->uflags & IsBrokenLink) {
     return;
   }
 
@@ -535,9 +557,13 @@ void cbPrevSong(WMWidget *self, void *data) {
 void cbChangeSize(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
   if (f->bigsize) {
-    WMResizeWidget(f->win, 350, WinHeightIfSmall);
+    f->WinHeightIfBig = WMWidgetHeight(f->win);
+    WMResizeWidget(f->win, WMWidgetWidth(f->win), WinHeightIfSmall);
   } else {
-    WMResizeWidget(f->win, 350, f->WinHeightIfBig);
+  	if (f->WinHeightIfBig <= WinHeightIfSmall + 30) {
+  	  f->WinHeightIfBig = 500;
+  	}
+    WMResizeWidget(f->win, WMWidgetWidth(f->win), f->WinHeightIfBig);
   }
 }
 
@@ -555,8 +581,8 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     f->bigsize = 0;
   } else {
     WMSetButtonImage(f->sizebutton, WMCreatePixmapFromXPMData(f->scr, up_xpm));
-    WMResizeWidget(f->datalist, WMWidgetWidth(f->datalist),
-                   WMWidgetHeight(f->win) - WinHeightIfSmall + 2);
+    /*WMResizeWidget(f->datalist, WMWidgetWidth(f->datalist),
+                   WMWidgetHeight(f->win) - WinHeightIfSmall + 2);*/
     f->ListHeight = WMWidgetHeight(f->datalist) / WMGetListItemHeight(f->datalist);
     f->WinHeightIfBig = h;
     if (WMGetListSelectedItemRow(f->datalist) >= WMGetListPosition(f->datalist) + f->ListHeight) {
@@ -593,8 +619,9 @@ void cbSizeChanged(void *self, WMNotification *notif) {
   
   WMResizeWidget(f->sizebutton, 30, 15);
   WMMoveWidget(f->sizebutton, 10, WinHeightIfSmall-15);
+
+  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
   if (f->bigsize) {
-    WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
     WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall);
   }
 }
@@ -688,11 +715,13 @@ void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
               4, 0, rect->size.width, WALeft,
               itemPtr->uflags & IsUnsupported ? WMDarkGrayColor(screen) : WMBlackColor(screen),
               False, text, strlen(text));
+  
   if (itemPtr->uflags & IsLink) {
     int tw = WMWidthOfString(font, text, strlen(text));
     if (tw > rect->size.width - 4)
       tw = rect->size.width - 4;
-    XDrawLine(dpy, d, WMColorGC(WMDarkGrayColor(screen)), 4, rect->size.height-2, 2 + tw, rect->size.height-2);
+    int ly = itemPtr->uflags & IsBrokenLink ? rect->size.height / 2 : rect->size.height - 2;
+    XDrawLine(dpy, d, WMColorGC(WMDarkGrayColor(screen)), 4, ly, 2 + tw, ly);
   }
 }
 
