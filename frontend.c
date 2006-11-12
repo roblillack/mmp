@@ -89,6 +89,7 @@ typedef struct Frontend {
   Bool playing;
   Bool rewind;
   Bool showUnsupportedFiles;
+  WMColor *globalBackgroundColor;
 } myFrontend;
 
 // other stuff
@@ -117,6 +118,7 @@ Frontend* feCreate() {
   f->settings = NULL;
   f->WinHeightIfBig = 0;
   f->showUnsupportedFiles = False;
+  f->globalBackgroundColor = NULL;
   return f;
 }
 
@@ -193,6 +195,14 @@ void loadConfig(myFrontend *f) {
     
   f->rewind = WMGetUDBoolForKey(f->settings, "repeatMode");
   f->showUnsupportedFiles = WMGetUDBoolForKey(f->settings, "showUnsupportedFiles");
+  int backRED = WMGetUDIntegerForKey(f->settings, "backRED");
+  int backGREEN = WMGetUDIntegerForKey(f->settings, "backGREEN");
+  int backBLUE = WMGetUDIntegerForKey(f->settings, "backBLUE");
+  if (backRED + backGREEN + backBLUE == 0) {
+  	f->globalBackgroundColor = WMGrayColor(f->scr);
+  } else {
+  	f->globalBackgroundColor = WMCreateRGBColor(f->scr, backRED<<8, backGREEN<<8, backBLUE<<8, False);  
+  }
 }
 
 void saveConfig(myFrontend *f) {
@@ -206,6 +216,9 @@ void saveConfig(myFrontend *f) {
   WMSetUDStringForKey(f->settings, f->currentdir, "currentPath");
   WMSetUDBoolForKey(f->settings, f->rewind, "repeatMode");
   WMSetUDBoolForKey(f->settings, f->showUnsupportedFiles, "showUnsupportedFiles");
+  WMSetUDIntegerForKey(f->settings, WMRedComponentOfColor(f->globalBackgroundColor)>>8, "backRED");
+  WMSetUDIntegerForKey(f->settings, WMGreenComponentOfColor(f->globalBackgroundColor)>>8, "backGREEN");
+  WMSetUDIntegerForKey(f->settings, WMBlueComponentOfColor(f->globalBackgroundColor)>>8, "backBLUE");
   WMSaveUserDefaults(f->settings);
 }
 
@@ -302,6 +315,20 @@ Bool feInit(myFrontend *f) {
   WMSetListUserDrawProc(f->datalist, DrawListItem);
   
   loadConfig(f);
+  WMSetWidgetBackgroundColor(f->datalist, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->nextsongbutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->playsongbutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->prevsongbutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->sizebutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->songtitlelabel, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->songtitle, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->songartist, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->songtime, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->statuslabel, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->stopsongbutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->quitbutton, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->win, f->globalBackgroundColor);
+
   //WMEnableUDPeriodicSynchronization(f->settings, True);
   
   /* layout */
