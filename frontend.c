@@ -483,7 +483,8 @@ void cbPlaySong(WMWidget *self, void *data) {
   char buf[PATH_MAX];
 
   /* selected entry not a file? */
-  if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory ||
+  if (WMGetListSelectedItem(f->datalist) == NULL ||
+      WMGetListSelectedItem(f->datalist)->uflags & IsDirectory ||
       WMGetListSelectedItem(f->datalist)->uflags & IsBrokenLink) {
     return;
   }
