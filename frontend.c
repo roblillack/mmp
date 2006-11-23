@@ -479,7 +479,6 @@ void feShowDir(myFrontend *f, char *dirname) {
     return;
   }
 
-  setDirLabel(f, realdirname);
   //WMSetLabelText(f->dirlabel, rindex(realdirname, '/')+1);
 
   dirptr = opendir(realdirname);
@@ -488,24 +487,24 @@ void feShowDir(myFrontend *f, char *dirname) {
       // skip hidden entries and .. and .
       if (strlen(entry->d_name) < 1 ||
           entry->d_name[0] == '.') continue;
+
+      struct stat s;
       int flags = 0;
-      if (entry->d_type == DT_DIR) {
+      snprintf(buf, sizeof(buf), "%s/%s", realdirname, entry->d_name);
+      if (lstat(buf, &s) != 0) continue;
+      if (S_ISDIR(s.st_mode)) { //entry->d_type == DT_DIR) {
         flags = IsDirectory;
-      } else if (entry->d_type == DT_LNK) {
+      } else if (S_ISLNK(s.st_mode)) { //entry->d_type == DT_LNK) {
           flags = IsLink;
-        struct stat s;
-        snprintf(buf, sizeof(buf), "%s/%s", realdirname, entry->d_name);
-        if (stat(buf, &s) == 0) {
-          flags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
-        } else {
-          flags |= IsBrokenLink;
-          //fprintf(stderr, "error STATing %s: %s\n", buf, perror);
-        }
-      } else if (entry->d_type == DT_REG) {
+          if (stat(buf, &s) == 0) {
+            flags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
+          } else {
+            flags |= IsBrokenLink;
+          }
+      } else if (S_ISREG(s.st_mode)) { /*if (entry->d_type == DT_REG) {*/
         flags = IsFile;
       } else {
-      	flags = IsBrokenLink;
-      	// no link, no dir, no regular file...
+        flags = IsBrokenLink;
       }
       
       if (flags & IsFile && !GetBackendSupportingFile(f, entry->d_name)) {
@@ -528,6 +527,7 @@ void feShowDir(myFrontend *f, char *dirname) {
 
   ucfree(f->currentdir);
   f->currentdir = wstrdup(realdirname);
+  setDirLabel(f, f->currentdir);
 
   if (strcmp(realdirname, "/") != 0) {
     item = WMAddListItem(f->datalist, "..");
@@ -745,19 +745,29 @@ void cbSizeChanged(void *self, WMNotification *notif) {
 }
 
 void setDirLabel(myFrontend *f, const char *text) {
-  char *dirp =(char*)text;
-  WMSetLabelText(f->dirlabel, dirp);
-  for (; dirp != '\0'; dirp++) {
+  char *dirp;
+  Bool clipped = False;
+  char buf[MAXPATHLEN];
+
+  if (!f || !text) return;
+
+  strncpy(buf, text, sizeof(buf)-1);
+  buf[sizeof(buf)-1] = '\0';
+
+  for (dirp = buf; dirp != '\0'; dirp++) {
     if (WMWidthOfString(WMDefaultSystemFont(f->scr), dirp, strlen(dirp)) < WMWidgetWidth(f->dirlabel)-3) {
-      WMSetLabelText(f->dirlabel, dirp);
       break;
     }
   }
-  if (dirp != text) {
-    dirp = WMGetLabelText(f->dirlabel);
-    if (strlen(dirp) >= 3)
+
+  if (dirp > buf) {
+    if (strlen(dirp) >= 3) {
       strncpy(dirp, "...", 3);
+      WMSetLabelText(f->dirlabel, dirp);
+    }
   }
+  if (!WMGetLabelText(f->dirlabel) || strncmp(WMGetLabelText(f->dirlabel), dirp, sizeof(buf)-(dirp-buf)) != 0)
+    WMSetLabelText(f->dirlabel, dirp);
 }
 
 void cbQuit(WMWidget *self, void *data) {
