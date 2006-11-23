@@ -492,11 +492,6 @@ void feShowDir(myFrontend *f, char *dirname) {
         }
       } else if (entry->d_type == DT_REG) {
         flags = IsFile;
-        if (f->playingSongFile && f->playingSongDir &&
-            !strcmp(f->playingSongFile, entry->d_name) &&
-            !strcmp(f->playingSongDir, realdirname)) {
-          f->playingSongItem = item;
-        }
       } else {
       	flags = IsBrokenLink;
       	// no link, no dir, no regular file...
@@ -511,6 +506,11 @@ void feShowDir(myFrontend *f, char *dirname) {
       }
       item = WMAddListItem(f->datalist, entry->d_name);
       item->uflags = flags;
+      if (f->playingSongFile && f->playingSongDir &&
+          !strcmp(f->playingSongFile, entry->d_name) &&
+          !strcmp(f->playingSongDir, realdirname)) {
+        f->playingSongItem = item;
+      }
     }
     closedir(dirptr);
   }
