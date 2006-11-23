@@ -19,7 +19,7 @@ all:    $(PROGRAM)
 
 $(PROGRAM):	$(OBJECTS)
 	$(CC) -o $(PROGRAM) $(OBJECTS) $(wings_LIBS)
-	strip $(PROGRAM)
+	#strip $(PROGRAM)
 
 clean: 
 	rm -f *.o $(PROGRAM)

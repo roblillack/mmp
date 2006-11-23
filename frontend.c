@@ -65,7 +65,8 @@ typedef struct Frontend {
           *songtitle,
           *songartist,
           *statuslabel,
-          *songtime;
+          *songtime,
+          *dirlabel;
   WMList *datalist;
 
   WMButton *sizebutton,
@@ -97,6 +98,7 @@ typedef struct Frontend {
 } myFrontend;
 
 // other stuff
+void setDirLabel(myFrontend*, const char*);
 Backend* GetBackendSupportingFile(myFrontend*, const char*);
 int CompareListItems(const void*, const void*);
 void DrawListItem(WMList*, int, Drawable, char*, int, WMRect*);
@@ -371,6 +373,11 @@ Bool feInit(myFrontend *f) {
   WMSetButtonBordered(f->sizebutton, False);
   WMSetButtonAction(f->sizebutton, cbChangeSize, f);
   //WMSetBalloonTextForView("show/hide the song list.", WMWidgetView(f->sizebutton));
+  
+  f->dirlabel = WMCreateLabel(f->win);
+  WMSetLabelText(f->dirlabel, NULL);
+  WMSetLabelTextAlignment(f->dirlabel, WALeft);
+  WMSetLabelTextColor(f->dirlabel, WMDarkGrayColor(f->scr));
 
   f->datalist = WMCreateList(f->win);
   WMHangData(f->datalist, (void*)f);
@@ -380,6 +387,7 @@ Bool feInit(myFrontend *f) {
   WMSetListUserDrawProc(f->datalist, DrawListItem);
   
   WMSetWidgetBackgroundColor(f->datalist, f->colorListBack);
+  WMSetWidgetBackgroundColor(f->dirlabel, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->nextsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->playsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->prevsongbutton, f->colorWindowBack);
@@ -470,6 +478,9 @@ void feShowDir(myFrontend *f, char *dirname) {
     fprintf(stderr, "unable to expand %s\n", dirname);
     return;
   }
+
+  setDirLabel(f, realdirname);
+  //WMSetLabelText(f->dirlabel, rindex(realdirname, '/')+1);
 
   dirptr = opendir(realdirname);
   if (dirptr) {
@@ -676,7 +687,7 @@ void cbSizeChanged(void *self, WMNotification *notif) {
   int h = WMWidgetHeight(f->win);
   
   if (h <= WinHeightIfSmall + 30) {
-  	// collapse, if too small
+    // collapse, if too small
     if (h != WinHeightIfSmall) {
       WMResizeWidget(f->win, w, WinHeightIfSmall);
     }
@@ -691,6 +702,7 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     if (WMGetListSelectedItemRow(f->datalist) >= WMGetListPosition(f->datalist) + f->ListHeight) {
       WMSetListPosition(f->datalist, WMGetListSelectedItemRow(f->datalist) - f->ListHeight + 1);
     }
+
     f->bigsize = 1;
   }
   
@@ -718,14 +730,33 @@ void cbSizeChanged(void *self, WMNotification *notif) {
   WMMoveWidget(f->nextsongbutton, w - 30, 60);
   
   WMResizeWidget(f->quitbutton, 30, 15);
-  WMMoveWidget(f->quitbutton, w - 40, WinHeightIfSmall-15);
+  WMMoveWidget(f->quitbutton, w - 37, WinHeightIfSmall-15);
   
   WMResizeWidget(f->sizebutton, 30, 15);
-  WMMoveWidget(f->sizebutton, 10, WinHeightIfSmall-15);
+  WMMoveWidget(f->sizebutton, 7, WinHeightIfSmall-15);
 
-  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
+  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+15);
+  WMMoveWidget(f->dirlabel, 7, WinHeightIfSmall+1);
   if (f->bigsize) {
-    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall);
+    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-15);
+    WMResizeWidget(f->dirlabel, w - 14, 15);
+    setDirLabel(f, f->currentdir);
+ }
+}
+
+void setDirLabel(myFrontend *f, const char *text) {
+  char *dirp =(char*)text;
+  WMSetLabelText(f->dirlabel, dirp);
+  for (; dirp != '\0'; dirp++) {
+    if (WMWidthOfString(WMDefaultSystemFont(f->scr), dirp, strlen(dirp)) < WMWidgetWidth(f->dirlabel)-3) {
+      WMSetLabelText(f->dirlabel, dirp);
+      break;
+    }
+  }
+  if (dirp != text) {
+    dirp = WMGetLabelText(f->dirlabel);
+    if (strlen(dirp) >= 3)
+      strncpy(dirp, "...", 3);
   }
 }
 
