@@ -454,8 +454,8 @@ Backend* GetBackendSupportingFile(myFrontend *f, const char *filename) {
 void feShowDir(myFrontend *f, char *dirname) {
   DIR *dirptr;
   struct dirent *entry;
-  char realdirname[PATH_MAX];
-  char buf[PATH_MAX];
+  char realdirname[MAXPATHLEN];
+  char buf[MAXPATHLEN];
   WMListItem *item = NULL;
 
   WMClearList(f->datalist);
@@ -483,7 +483,7 @@ void feShowDir(myFrontend *f, char *dirname) {
       } else if (entry->d_type == DT_LNK) {
           flags = IsLink;
         struct stat s;
-        snprintf(buf, PATH_MAX, "%s/%s", realdirname, entry->d_name);
+        snprintf(buf, sizeof(buf), "%s/%s", realdirname, entry->d_name);
         if (stat(buf, &s) == 0) {
           flags |= ((S_ISDIR(s.st_mode)) ? IsDirectory : IsFile);
         } else {
@@ -528,11 +528,11 @@ void feShowDir(myFrontend *f, char *dirname) {
 
 void cbDoubleClick(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
-  char buf[PATH_MAX];
+  char buf[MAXPATHLEN];
 
   /* selected entry is a dir? */
   if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory) {
-    snprintf(buf, PATH_MAX, "%s/%s", f->currentdir,
+    snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
              WMGetListSelectedItem(f->datalist)->text);
     feShowDir(f, buf);
     return;
@@ -555,7 +555,8 @@ void cbPlaySong(WMWidget *self, void *data) {
   cbStopPlaying(NULL, f);
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
-  strncpy(buf, WMGetListSelectedItem(f->datalist)->text, PATH_MAX);
+  strncpy(buf, WMGetListSelectedItem(f->datalist)->text, sizeof(buf)-1);
+  buf[sizeof(buf)-1] = '\0';
   char *dot = rindex(buf, '.');
   if (dot) *dot = '\0';
   WMSetLabelText(f->songtitle, buf);
