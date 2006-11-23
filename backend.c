@@ -10,45 +10,34 @@
 #include <unistd.h>
 
 #include <locale.h>
-#include <signal.h>
 
 typedef struct Backend {
   WMArray *frontends;
   int pipeToPlayer[2],
       pipeFromPlayer[2];
   pid_t childPid;
-  Bool forcedKill;
-  Bool isPlaying;
   WMHandlerID playerHandlerID;
 } myBackend;
 
 static myBackend *firstBackend = NULL;
-void handleSigchld(int);
 void handlePlayerInput(int, int, void*);
 void PlayingStopped(myBackend*);
 void SetArtist(myBackend*, char*);
 void SetSongName(myBackend*, char*);
-void SetCurrentPosition(myBackend*, float, unsigned int, unsigned int);
+void SetCurrentPosition(myBackend*, long);
+void SetFileLength(myBackend*, long);
 
 // -----------------------------------------------------------------------------
 
 Backend *beCreate() {
   myBackend *b = wmalloc(sizeof(myBackend));
   b->frontends = WMCreateArray(0);
-  b->childPid = 0;
   return b;
 }
 
 Bool beInit(myBackend *b) {
-  if (!firstBackend) {
-    firstBackend = b;
-    if (signal(SIGCHLD, handleSigchld) == SIG_ERR) {
-      perror("could not setup signal handler");
-      return False;
-    }
-  }
-
   // search for mpg123....
+  b->childPid = 0;
   return True;
 }
 
@@ -57,6 +46,10 @@ void beAddFrontend(myBackend *b, Frontend *f) {
     WMAddToArray(b->frontends, f);
     feAddBackend(f, b);
   }
+}
+
+Bool beIsPlaying(myBackend *b) {
+  return (b->childPid > 0);
 }
 
 void beRemoveFrontend(myBackend *b, Frontend *f) {
@@ -72,9 +65,6 @@ void bePlay(myBackend *b, char *filename) {
 
   /* should we're playing st. stop it */
   beStop(b);
-
-  /* list playing. so stopping will play the next song. */
-  b->forcedKill = False;
 
   /* create a pipe for the child to talk to us. */
   if (pipe(b->pipeFromPlayer) == -1 || pipe(b->pipeToPlayer) == -1) {
@@ -115,22 +105,32 @@ void bePlay(myBackend *b, char *filename) {
   /* now send the file to play to the child process */
   snprintf(buf, PATH_MAX, "L %s\n", filename);
   write(b->pipeToPlayer[1], buf, strlen(buf));
-
-  b->isPlaying = True;
 }
 
 void beStop(myBackend* b) {
   if (b->childPid) {
-    b->forcedKill = True;
     kill(b->childPid, SIGINT);
-    kill(b->childPid, SIGTERM);
-    kill(b->childPid, SIGKILL);
-    waitpid(b->childPid, NULL, 0);
-    close(b->pipeFromPlayer[0]);
-    close(b->pipeToPlayer[1]);
-    WMDeleteInputHandler(b->playerHandlerID);
-    b->childPid = 0;
+    int status;
+    if (waitpid(b->childPid, &status, WNOHANG) == 0) {
+      sleep(1);
+      if (b->childPid == 0) return;
+      kill(b->childPid, SIGTERM);
+      if (waitpid(b->childPid, &status, WNOHANG) == 0) {
+        sleep(1);
+        if (b->childPid == 0) return;
+        kill(b->childPid, SIGKILL);
+      }
+    }
   }
+}
+
+void beHandleSigChild(myBackend* b) {
+  close(b->pipeFromPlayer[0]);
+  close(b->pipeToPlayer[1]);
+  WMDeleteInputHandler(b->playerHandlerID);
+  b->childPid = 0;
+  beInit(b);
+  PlayingStopped(b);
 }
 
 WMArray* beGetSupportedExtensions(Backend* b) {
@@ -179,7 +179,8 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
         unsigned int secpassed = (unsigned int) strtol(strtok_r(NULL, " ", &sep), NULL, 10);
         unsigned int sectotal = (unsigned int) (secpassed + strtol(strtok_r(NULL, " ", &sep), NULL, 10));
         //printf("%.03f\n", ratio);
-        SetCurrentPosition(b, ratio, secpassed, sectotal);
+        SetFileLength(b, sectotal);
+        SetCurrentPosition(b, secpassed);
       } else if (buf[1] == 'I') {
         /* format: "@I ID3:<30-chars-songname><30-chars-artist><32-chars-year???><genre>"
                            ^ buf+7            ^ buf+37         ^ buf+67          ^ buf+99 */
@@ -197,7 +198,7 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
         }
       } else if(buf[1]=='P' && buf[3]=='0') {
         //if (!motherkilledit) nextSong(NULL, NULL);
-        PlayingStopped(b);
+        beStop(b);
       } else if(buf[1]=='R') {
         // @R MPG123
       } else if(buf[1]=='S') {
@@ -236,17 +237,20 @@ void SetSongName(myBackend *b, char *text) {
   }
 }
 
-void SetCurrentPosition(myBackend *b, float r, unsigned int p, unsigned int t) {
+void SetFileLength(myBackend *b, long l) {
   Frontend *f;
   WMArrayIterator i;
 
   WM_ITERATE_ARRAY(b->frontends, f, i) {
-    feSetCurrentPosition(f, r, p, t);
+    feSetFileLength(f, l);
   }
 }
 
-void handleSigchld(int sig) {
-  if (firstBackend) {
-    PlayingStopped(firstBackend);
+void SetCurrentPosition(myBackend *b, long p) {
+  Frontend *f;
+  WMArrayIterator i;
+
+  WM_ITERATE_ARRAY(b->frontends, f, i) {
+    feSetCurrentPosition(f, p);
   }
 }

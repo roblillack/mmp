@@ -5,13 +5,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
 #include <locale.h>
-#include <signal.h>
+
+#define ucfree(x) if(x) { wfree(x); x = NULL; }
 
 typedef struct Backend {
   WMArray *frontends;
@@ -21,36 +23,36 @@ typedef struct Backend {
   Bool childLives;
   Bool forcedKill;
   Bool isPlaying;
+  WMArray *clipInfo;
   WMHandlerID playerHandlerID;
 } mplayerBackend;
 
-static mplayerBackend *firstBackend = NULL;
+//static mplayerBackend *firstBackend = NULL;
 void handleSigchld(int);
 void handlePlayerInput(int, int, void*);
 void PlayingStopped(mplayerBackend*);
 void SetArtist(mplayerBackend*, char*);
 void SetSongName(mplayerBackend*, char*);
-void SetCurrentPosition(mplayerBackend*, float, unsigned int, unsigned int);
+void SetFileLength(mplayerBackend*, long);
+void SetCurrentPosition(mplayerBackend*, long);
 
 // -----------------------------------------------------------------------------
 
 Backend *beCreate() {
   mplayerBackend *b = wmalloc(sizeof(mplayerBackend));
   b->frontends = WMCreateArray(0);
-  b->childPid = 0;
+  b->clipInfo = NULL;
   return b;
 }
 
-Bool beInit(mplayerBackend *b) {
-  if (!firstBackend) {
-    firstBackend = b;
-    if (signal(SIGCHLD, handleSigchld) == SIG_ERR) {
-      perror("could not setup signal handler");
-      return False;
-    }
-  }
+Bool beIsPlaying(mplayerBackend *b) {
+  return (b->childPid > 0);
+}
 
-  // search for mpg123....
+Bool beInit(mplayerBackend *b) {
+  b->childPid = 0;
+  if (b->clipInfo) WMFreeArray(b->clipInfo);
+  b->clipInfo = WMCreateArray(0);
   return True;
 }
 
@@ -70,13 +72,8 @@ void beRemoveFrontend(mplayerBackend *b, Frontend *f) {
 }
 
 void bePlay(mplayerBackend *b, char *filename) {
-  char buf[PATH_MAX];
-
   /* should we're playing st. stop it */
   beStop(b);
-
-  /* list playing. so stopping will play the next song. */
-  b->forcedKill = False;
 
   /* create a pipe for the child to talk to us. */
   if (pipe(b->pipeFromPlayer) == -1 || pipe(b->pipeToPlayer) == -1) {
@@ -102,44 +99,48 @@ void bePlay(mplayerBackend *b, char *filename) {
     dup(b->pipeToPlayer[0]);
     close(b->pipeToPlayer[0]);
     close(b->pipeToPlayer[1]);
-    execlp("mplayer", "mplayer", filename, NULL);
+    execlp("mplayer", "mplayer", "-framedrop", "-identify", filename, NULL);
     perror("[mmp] error running mplayer\n");
     return;
   } else if (b->childPid == -1) {
     printf("[mmp] error. could not fork....\n");
-    b->childPid=0;
+    b->childPid = 0;
   }
 
   /* we don't need to write to this pipe */
   close(b->pipeFromPlayer[1]);
   close(b->pipeToPlayer[0]);
-
-  /* now send the file to play to the child process */
-  /*snprintf(buf, PATH_MAX, "L %s\n", filename);
-  write(b->pipeToPlayer[1], buf, strlen(buf));*/
-  
-  b->childLives = True;
-  b->isPlaying = True;
 }
 
 void beStop(mplayerBackend* b) {
-  printf("BESTOP\n");
   if (b->childPid) {
-    printf("KILLING\n");
     b->forcedKill = True;
     kill(b->childPid, SIGINT);
-    kill(b->childPid, SIGTERM);
-    kill(b->childPid, SIGKILL);
-    waitpid(b->childPid, NULL, 0);
-    close(b->pipeFromPlayer[0]);
-    close(b->pipeToPlayer[1]);
-    WMDeleteInputHandler(b->playerHandlerID);
-    b->childPid = 0;
+    int status;
+    if (waitpid(b->childPid, &status, WNOHANG) == 0) {
+      sleep(1);
+      if (b->childPid == 0) return;
+      kill(b->childPid, SIGTERM);
+      if (waitpid(b->childPid, &status, WNOHANG) == 0) {
+        sleep(1);
+        if (b->childPid == 0) return;
+        kill(b->childPid, SIGKILL);
+      }
+    }
   }
 }
 
+void beHandleSigChild(mplayerBackend* b) {
+  close(b->pipeFromPlayer[0]);
+  close(b->pipeToPlayer[1]);
+  WMDeleteInputHandler(b->playerHandlerID);
+  b->childPid = 0;
+  beInit(b);
+  PlayingStopped(b);
+}
+
 WMArray* beGetSupportedExtensions(Backend* b) {
-  WMArray* types = WMCreateArray(11);
+  WMArray* types = WMCreateArray(12);
   WMAddToArray(types, "mp3");
   WMAddToArray(types, "ogg");
   WMAddToArray(types, "flac");
@@ -151,6 +152,7 @@ WMArray* beGetSupportedExtensions(Backend* b) {
   WMAddToArray(types, "flv");
   WMAddToArray(types, "wmv");
   WMAddToArray(types, "mov");
+  WMAddToArray(types, "3gp");
   return types;
 }
 
@@ -191,16 +193,13 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
   char bigbuf[BUFSIZE];   // the whole buffer
   char *buf;              // pointer the line we work with
   char *laststop = NULL;
-  //char *str = NULL, *str_start = NULL, *str_end = NULL;
-  int len; //, a;
+  char *start;
+  int len;;
   
   if (b->childLives == False) {
     PlayingStopped(b);
   }
   
-
-  //bzero(bigbuf, BUFSIZE);
-
   len = read(b->pipeFromPlayer[0], bigbuf, BUFSIZE-1);
   // drop last (incomplete) line, if buffer full
   if (len == BUFSIZE-1 && bigbuf[BUFSIZE-1] != '\n') {
@@ -220,51 +219,38 @@ void handlePlayerInput(int fd, int mask, void *clientData) {
        buf = strtok_r(NULL, "\n", &laststop)) {
     //printf("buf: %s\n", buf);
 
-    if (strncmp(buf, "A: ", 3) == 0) {
-      // audio clips:
-      // A:  36.3 (36.2) of 418.0 (06:58.0)  1.5%
-      // A:  79.2 (01:19.2) of 418.0 (06:58.0)  1.0%
-      // video clips:
-      // A:   0.6 V:   0.4 A-V:  0.166 ct:  0.040  13/ 13 ??% ??% ??,?% 7 0
-      //printf(">> %s\n", buf);
-      char *start;
-      char *end;
-      double ratio1, ratio2;
-      unsigned int secpassed, sectotal;
-      start = findNextNumber(buf + 3, 0);
+    if (strncmp(buf, "A: ", 3) == 0 || strncmp(buf, "V: ", 3) == 0) {
+      start = findNextNumber(buf+3, 0);
       if (start) {
-        ratio1 = (double) strtol(start, &end, 10);
-        start = findNextNumber(end, 0);
-        if (start) {
-          ratio1 += (double) strtol(start, &end, 10) / 10.0;
-          secpassed = (unsigned int) floor(ratio1);
-          end = strstr(end, " of ");
-          if (end) {
-            start = findNextNumber(end, 0);
-            ratio2 = (double) strtol(start, &end, 10);
-            start = findNextNumber(end, 0);
-            if (start) {
-              ratio2 += (double) strtol(start, NULL, 10) / 10.0;
-              sectotal = (unsigned int) floor(ratio2);
-              SetCurrentPosition(b, (float)(ratio1/ratio2), secpassed, sectotal);
-            }
+        SetCurrentPosition(b, strtol(start, NULL, 10));
+      }
+    } else if (strncmp(buf, "ID_", 3) == 0) {
+      if (strncmp(buf+3, "LENGTH=", 7) == 0) {
+        start = findNextNumber(buf+3, 0);
+        SetFileLength(b, strtol(start, NULL, 10));
+      } else if (strncmp(buf+3, "CLIP_INFO", 9) == 0) {
+        if (strncmp(buf+12, "_NAME", 5) == 0) {
+          start = findNextNumber(buf+17, 0);
+          if (!start) continue;
+          int index = (int) strtol(start, &start, 10);
+          if (*start != '=') continue;
+          //printf("adding %s\n", start+1);
+          start = WMReplaceInArray(b->clipInfo, index, wstrdup(start+1));
+          ucfree(start);
+        } else if (strncmp(buf+12, "_VALUE", 6) == 0) {
+          start = findNextNumber(buf+18, 0);
+          if (!start) continue;
+          int index = (int) strtol(start, &start, 10);
+          if (*start != '=') continue;
+          //printf("getting %i: %s\n", index, start+1);
+          if (strncmp(WMGetFromArray(b->clipInfo, index), "Artist", 6) == 0) {
+            SetArtist(b, start+1);
+          } else if (strncmp(WMGetFromArray(b->clipInfo, index), "Title", 5) == 0) {
+            SetSongName(b, start+1);
           }
         }
-      }
-    } else if (strncmp(buf, " Artist: ", 9) == 0) {
-      SetArtist(b, buf+9);
-    } else if (strncmp(buf, " Title: ", 8) == 0) {
-      SetSongName(b, buf+8);
-    } else if (buf[0] == '@') {
-      if(buf[1]=='P' && buf[3]=='0') {
-        //if (!motherkilledit) nextSong(NULL, NULL);
-        PlayingStopped(b);
-      } else if(buf[1]=='R') {
-        // @R MPG123
-      } else if(buf[1]=='S') {
-        // ?
       } else {
-        //printf("INPUT: %s\n", buf);
+        //printf("unknown: %s\n", buf+3);
       }
     } //else printf("UNKNOWN: %s\n", buf);
   }
@@ -297,19 +283,22 @@ void SetSongName(mplayerBackend *b, char *text) {
   }
 }
 
-void SetCurrentPosition(mplayerBackend *b, float r, unsigned int p, unsigned int t) {
+void SetCurrentPosition(mplayerBackend *b, long p) {
   Frontend *f;
   WMArrayIterator i;
 
   WM_ITERATE_ARRAY(b->frontends, f, i) {
-    feSetCurrentPosition(f, r, p, t);
+    feSetCurrentPosition(f, p);
   }
 }
 
-void handleSigchld(int sig) {
-  printf("SIGCHLD\n");
-  if (firstBackend) {
-    //PlayingStopped(firstBackend);
-    firstBackend->childLives = False;
+void SetFileLength(mplayerBackend *b, long l) {
+  Frontend *f;
+  WMArrayIterator i;
+
+  WM_ITERATE_ARRAY(b->frontends, f, i) {
+    feSetFileLength(f, l);
   }
 }
+
+

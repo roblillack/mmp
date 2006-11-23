@@ -1,6 +1,8 @@
 CC = gcc
-wings_INCS      = -I. -I/usr/X11R6/include
-wings_LIBS      = -L/usr/X11R6/lib -L/usr/local/lib -lWINGs -lXft -lX11 -lwraster
+wings_INCS      = -I. -I/usr/X11R6/include -I/usr/local/include -I/usr/pkg/include
+wings_LIBS      = -L/usr/X11R6/lib -L/usr/local/lib -L/usr/pkg/lib -lWINGs -lXft -lX11 -lwraster
+# you may need:
+# -lintl -liconv
 
 PROGRAM = mmp
 
@@ -17,6 +19,7 @@ all:    $(PROGRAM)
 
 $(PROGRAM):	$(OBJECTS)
 	$(CC) -o $(PROGRAM) $(OBJECTS) $(wings_LIBS)
+	strip $(PROGRAM)
 
 clean: 
 	rm -f *.o $(PROGRAM)

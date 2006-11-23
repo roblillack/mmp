@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/stat.h>
 
 #include "pixmaps/appicon.xpm"
@@ -90,6 +91,8 @@ typedef struct Frontend {
   Bool rewind;
   Bool showUnsupportedFiles;
   WMColor *globalBackgroundColor;
+  long secondsPassed;
+  long totalLength;
 } myFrontend;
 
 // other stuff
@@ -119,6 +122,8 @@ Frontend* feCreate() {
   f->WinHeightIfBig = 0;
   f->showUnsupportedFiles = False;
   f->globalBackgroundColor = NULL;
+  f->secondsPassed = -1;
+  f->totalLength = -1;
   return f;
 }
 
@@ -158,22 +163,33 @@ void fePlayingStopped(myFrontend *f) {
   }
 }
 
-void feSetCurrentPosition(myFrontend *f, float r, unsigned int passed, unsigned int total) {
+void updateTimeDisplay(myFrontend *f) {
   char buf[20];
-  snprintf(buf, 20, "%.2u:%.2u / %.2u:%.2u", passed/60, passed%60, total/60, total%60);
 
-  if (r < 0) {
-    f->currentRatio = (float)((double)passed/(double)total);
+  if (f->secondsPassed >= 0 && f->totalLength >= 0) {
+    snprintf(buf, sizeof(buf), "%.2u:%.2u / %.2u:%.2u", f->secondsPassed/60, f->secondsPassed%60,
+                                                        f->totalLength/60, f->totalLength%60);
+    f->currentRatio = (float)f->secondsPassed/f->totalLength;
   } else {
-    f->currentRatio = r;
+    snprintf(buf, sizeof(buf), "?");
+    f->currentRatio = 0.0;
   }
 
-  if (strncmp(WMGetLabelText(f->songtime), buf, 20)) {
+  if (strncmp(WMGetLabelText(f->songtime), buf, sizeof(buf))) {
     WMSetLabelText(f->songtime, buf);
     if (f->playingSongItem)
       // but i don't want to redisplay the whole widget :(
       WMRedisplayWidget(f->datalist);
   }
+}
+
+void feSetFileLength(myFrontend *f, long length) {
+  f->totalLength = length;
+  updateTimeDisplay(f);
+}
+void feSetCurrentPosition(myFrontend *f, long passed) {
+  f->secondsPassed = passed;
+  updateTimeDisplay(f);
 }
 
 void loadConfig(myFrontend *f) {
@@ -246,13 +262,13 @@ Bool feInit(myFrontend *f) {
   WMSetLabelTextColor(f->songtitlelabel, WMDarkGrayColor(f->scr));
 
   f->songtitle = WMCreateLabel(f->win);
-  WMSetLabelText(f->songtitle, APP_LONG);
+  WMSetLabelText(f->songtitle, "no file loaded.");
   WMSetLabelTextAlignment(f->songtitle, WARight);
   WMSetLabelTextColor(f->songtitle, WMCreateRGBColor(f->scr, 128<<8, 0, 0, False));
   WMSetLabelFont(f->songtitle, WMSystemFontOfSize(f->scr, 18));
 
   f->songartist = WMCreateLabel(f->win);
-  WMSetLabelText(f->songartist, APP_SHORT" "APP_VERSION);
+  WMSetLabelText(f->songartist, APP_LONG);
   WMSetLabelTextAlignment(f->songartist, WARight);
   /*WMSetWidgetBackgroundColor(songartist, WMCreateRGBColor(scr, 222<<8, 0, 0, False));*/
   WMSetLabelTextColor(f->songartist, WMCreateRGBColor(f->scr, 64<<8, 0, 0, False));
@@ -480,7 +496,7 @@ void cbDoubleClick(WMWidget *self, void *data) {
 
 void cbPlaySong(WMWidget *self, void *data) {
   myFrontend *f = (myFrontend*) data;
-  char buf[PATH_MAX];
+  char buf[MAXPATHLEN];
 
   /* selected entry not a file? */
   if (WMGetListSelectedItem(f->datalist) == NULL ||
@@ -493,11 +509,12 @@ void cbPlaySong(WMWidget *self, void *data) {
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
   strncpy(buf, WMGetListSelectedItem(f->datalist)->text, PATH_MAX);
-  buf[strlen(buf)-4]='\0';
+  char *dot = rindex(buf, '.');
+  if (dot) *dot = '\0';
   WMSetLabelText(f->songtitle, buf);
-  WMSetLabelText(f->songartist, APP_SHORT" "APP_VERSION);
+  WMSetLabelText(f->songartist, APP_LONG);
 
-  snprintf(buf, PATH_MAX, "%s/%s", f->currentdir,
+  snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
            WMGetListSelectedItem(f->datalist)->text);
 
   ucfree(f->playingSongDir);
@@ -521,19 +538,29 @@ void cbStopPlaying(WMWidget *self, void *data) {
   Backend *b;
   WMArrayIterator i;
 
-  WMSetLabelText(f->songtitle, APP_LONG);
-  WMSetLabelText(f->songartist, "no file loaded.");
+  WMSetLabelText(f->songartist, APP_LONG);
+  WMSetLabelText(f->songtitle, "no file loaded.");
   WMSetLabelText(f->songtime, "");
 
   ucfree(f->playingSongDir);
   ucfree(f->playingSongFile);
   f->playingSongItem = NULL;
   f->playing = False;
+  f->secondsPassed = -1;
+  f->totalLength = -1;
+  f->currentRatio = 0.0;
   WMRedisplayWidget(f->datalist);
 
   WM_ITERATE_ARRAY(f->backends, b, i) {
     beStop(b);
   }
+}
+
+void feHandleSigChild(myFrontend *f) {
+  WMArrayIterator i;
+  Backend *b;
+
+  WM_ITERATE_ARRAY(f->backends, b, i) beHandleSigChild(b);
 }
 
 void feMarkFile(myFrontend *f, char *name) {

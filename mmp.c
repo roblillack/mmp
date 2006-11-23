@@ -1,23 +1,31 @@
 #include <mmp.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/stat.h>
 
+static Frontend *frontend = NULL;
+
+void handleSigchld(int sig) {
+  if (frontend) {
+    feHandleSigChild(frontend);
+  }
+}
+
 int main(int argc, char *argv[]) {
-  Frontend *fe;
   Backend *be;
 
   //_Xdebug = True;
   WMInitializeApplication("mmp", &argc, argv);
-  fe = feCreate();
+  frontend = feCreate();
   be = beCreate();
 
   if (!beInit(be)) {
     return 1;
   } else {
-    feAddBackend(fe, be);
+    feAddBackend(frontend, be);
   }
 
-  feInit(fe);
+  feInit(frontend);
   if (argv[1]) {
     struct stat sb;
     stat(argv[1], &sb);
@@ -28,22 +36,28 @@ int main(int argc, char *argv[]) {
         if (*sep == '/') {
           *sep = '\0';
           if (strlen(argv[1])) {
-            feShowDir(fe, argv[1]);
+            feShowDir(frontend, argv[1]);
           }
-          feMarkFile(fe, sep+1);
-          cbPlaySong(NULL, fe);
+          feMarkFile(frontend, sep+1);
+          cbPlaySong(NULL, frontend);
           break;
         }
       }
     } else if (S_ISDIR(sb.st_mode)) {
-      feShowDir(fe, argv[1]);
+      feShowDir(frontend, argv[1]);
     } else {
-      feShowDir(fe, ".");
+      feShowDir(frontend, ".");
     }
   } else {
-    feShowDir(fe, NULL);
+    feShowDir(frontend, NULL);
   }
-  feRun(fe);
+
+  if (signal(SIGCHLD, handleSigchld) == SIG_ERR) {
+    perror("could not setup signal handler");
+    return False;
+  }
+
+  feRun(frontend);
 
   return 0;
 }
