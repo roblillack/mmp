@@ -239,3 +239,50 @@ Atom WMGetXdndLeaveAtom(W_Screen *screen) {
 Window WMGetRootWin(W_Screen *screen) {
   return screen->rootWin;
 }
+
+Bool WMSetGrayColor(W_Screen *scr, WMColor *col) {
+  if (!scr || !col) return False;
+  WMReleaseColor(scr->gray);
+  scr->gray = col;
+  return True;
+}
+
+Bool WMSetDarkGrayColor(W_Screen *scr, WMColor *col) {
+  if (!scr || !col) return False;
+  WMReleaseColor(scr->darkGray);
+  scr->darkGray = col;
+  return True;
+}
+
+Bool WMSetWhiteColor(W_Screen *scr, WMColor *col) {
+  if (!scr || !col) return False;
+  WMReleaseColor(scr->white);
+  scr->white = col;
+  return True;
+}
+
+Bool WMSetBlackColor(W_Screen *scr, WMColor *col) {
+  if (!scr || !col) return False;
+  WMReleaseColor(scr->black);
+  scr->black = col;
+  return True;
+}
+
+void WMSetUDColorForKey(WMUserDefaults *s, WMColor *col, char *key) {
+  static char colstr[8];
+  snprintf(colstr, sizeof(colstr), "#%02x%02x%02x",
+           WMRedComponentOfColor(col) >> 8,
+           WMBlueComponentOfColor(col) >> 8,
+           WMGreenComponentOfColor(col) >> 8);
+  WMSetUDStringForKey(s, colstr, key);
+}
+
+WMColor* WMGetUDColorForKey(WMUserDefaults *s, char *key, WMScreen *scr) {
+   char *str = WMGetUDStringForKey(s, key);
+  if (!str || strlen(str) != 7) return NULL;
+  char *nptr; 
+  long color = strtol(str+1, &nptr, 16);
+  if (*nptr != '\0') return NULL;
+  return WMCreateRGBColor(scr, (color >> 16) << 8, color & 0xff00, (color & 0xff) << 8, False);
+}
+

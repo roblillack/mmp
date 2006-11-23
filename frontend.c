@@ -75,7 +75,8 @@ typedef struct Frontend {
            *stopsongbutton,
            *dirupbutton,
            *quitbutton;
-  WMColor *playedColor;
+  WMColor *colorWindowBack, *colorListBack, *colorSelectionBack,
+          *colorSelectionFore, *colorPlayed;
   char *currentdir;
   int bigsize, largestnumber, VisibleRecord, ListHeight,
     WinHeightIfBig, fieldsChanged;
@@ -90,7 +91,7 @@ typedef struct Frontend {
   Bool playing;
   Bool rewind;
   Bool showUnsupportedFiles;
-  WMColor *globalBackgroundColor;
+  /*WMColor *globalBackgroundColor;*/
   long secondsPassed;
   long totalLength;
 } myFrontend;
@@ -121,9 +122,13 @@ Frontend* feCreate() {
   f->settings = NULL;
   f->WinHeightIfBig = 0;
   f->showUnsupportedFiles = False;
-  f->globalBackgroundColor = NULL;
   f->secondsPassed = -1;
   f->totalLength = -1;
+  f->colorSelectionFore = NULL;
+  f->colorSelectionBack = NULL;
+  f->colorListBack = NULL;
+  f->colorWindowBack = NULL;
+  f->colorPlayed = NULL;
   return f;
 }
 
@@ -194,31 +199,11 @@ void feSetCurrentPosition(myFrontend *f, long passed) {
 
 void loadConfig(myFrontend *f) {
   if (f->settings == NULL) {
-    char conf[PATH_MAX+1];
-    snprintf(conf, PATH_MAX, "%s/.mmprc", getenv("HOME"));
+    char conf[MAXPATHLEN];
+    snprintf(conf, sizeof(conf), "%s/.mmprc", getenv("HOME"));
     f->settings = WMGetDefaultsFromPath(conf);
   }
   
-  int w = WMGetUDIntegerForKey(f->settings, "windowWidth");
-  if (w == 0) w = 280;
-  int h = WMGetUDIntegerForKey(f->settings, "windowHeight");
-  if (h == 0) h = 400;
-  WMResizeWidget(f->win, w, h);
-  
-  WMSetWindowInitialPosition(f->win,
-    WMGetUDIntegerForKey(f->settings, "windowPosX"),
-    WMGetUDIntegerForKey(f->settings, "windowPosY"));
-    
-  f->rewind = WMGetUDBoolForKey(f->settings, "repeatMode");
-  f->showUnsupportedFiles = WMGetUDBoolForKey(f->settings, "showUnsupportedFiles");
-  int backRED = WMGetUDIntegerForKey(f->settings, "backRED");
-  int backGREEN = WMGetUDIntegerForKey(f->settings, "backGREEN");
-  int backBLUE = WMGetUDIntegerForKey(f->settings, "backBLUE");
-  if (backRED + backGREEN + backBLUE == 0) {
-  	f->globalBackgroundColor = WMGrayColor(f->scr);
-  } else {
-  	f->globalBackgroundColor = WMCreateRGBColor(f->scr, backRED<<8, backGREEN<<8, backBLUE<<8, False);  
-  }
 }
 
 void saveConfig(myFrontend *f) {
@@ -232,10 +217,31 @@ void saveConfig(myFrontend *f) {
   WMSetUDStringForKey(f->settings, f->currentdir, "currentPath");
   WMSetUDBoolForKey(f->settings, f->rewind, "repeatMode");
   WMSetUDBoolForKey(f->settings, f->showUnsupportedFiles, "showUnsupportedFiles");
-  WMSetUDIntegerForKey(f->settings, WMRedComponentOfColor(f->globalBackgroundColor)>>8, "backRED");
-  WMSetUDIntegerForKey(f->settings, WMGreenComponentOfColor(f->globalBackgroundColor)>>8, "backGREEN");
-  WMSetUDIntegerForKey(f->settings, WMBlueComponentOfColor(f->globalBackgroundColor)>>8, "backBLUE");
   WMSaveUserDefaults(f->settings);
+}
+
+int getColorStringRed(const char *str) {
+  if (!str || strlen(str) != 7) return -1;
+  char *nptr; 
+  long color = strtol(str+1, &nptr, 16);
+  if (*nptr != '\0') return -1;
+  return color >> 16;
+}
+
+int getColorStringGreen(const char *str) {
+  if (!str || strlen(str) != 7) return -1;
+  char *nptr; 
+  long color = strtol(str+1, &nptr, 16);
+  if (*nptr != '\0') return -1;
+  return (color >> 8) & 0xff;
+}
+
+int getColorStringBlue(const char *str) {
+  if (!str || strlen(str) != 7) return -1;
+  char *nptr; 
+  long color = strtol(str+1, &nptr, 16);
+  if (*nptr != '\0') return -1;
+  return color & 0xff;
 }
 
 Bool feInit(myFrontend *f) {
@@ -244,7 +250,41 @@ Bool feInit(myFrontend *f) {
   //scr = WMOpenScreen(NULL);
   // the only way to get an appicon seems to be:
   f->scr = WMCreateScreen(f->dpy, DefaultScreen(f->dpy));
+  loadConfig(f);
 
+    
+  f->rewind = WMGetUDBoolForKey(f->settings, "repeatMode");
+  f->showUnsupportedFiles = WMGetUDBoolForKey(f->settings, "showUnsupportedFiles");
+
+  f->colorSelectionFore = WMGetUDColorForKey(f->settings, "colorSelectionForground", f->scr);
+  if (!f->colorSelectionFore) f->colorSelectionFore = WMBlackColor(f->scr);
+  f->colorSelectionBack = WMGetUDColorForKey(f->settings, "colorSelectionBackground", f->scr);
+  if (!f->colorSelectionBack) f->colorSelectionBack = WMWhiteColor(f->scr);
+  f->colorListBack = WMGetUDColorForKey(f->settings, "colorListBackground", f->scr);
+  if (!f->colorListBack) f->colorListBack = WMGrayColor(f->scr);
+  f->colorPlayed = WMGetUDColorForKey(f->settings, "colorPlayed", f->scr);
+  if (!f->colorPlayed) f->colorPlayed = WMCreateRGBColor(f->scr, 240<<8, 220<<8, 220<<8, False);
+  f->colorWindowBack = WMGetUDColorForKey(f->settings, "colorWindowBackground", f->scr);
+  if (!f->colorWindowBack) f->colorWindowBack = WMGrayColor(f->scr);
+
+  char *str;
+  if ((str = WMGetUDStringForKey(f->settings, "colorBaseBackground")) && getColorStringRed(str) > -1) {
+    int r = getColorStringRed(str);
+    int g = getColorStringGreen(str);
+    int b = getColorStringBlue(str);
+#define DARKEN 100
+#define LIGHTEN 100
+    WMSetBlackColor(f->scr, WMCreateRGBColor(f->scr, (r-2*DARKEN > 0 ? r-2*DARKEN : 0) << 8,
+                                                     (g-2*DARKEN > 0 ? g-2*DARKEN : 0) << 8,
+                                                     (b-2*DARKEN > 0 ? b-2*DARKEN : 0) << 8, False));
+    WMSetWhiteColor(f->scr, WMCreateRGBColor(f->scr, (r+LIGHTEN < 255 ? r+LIGHTEN : 255) << 8,
+                                                     (g+LIGHTEN < 255 ? g+LIGHTEN : 255) << 8,
+                                                     (b+LIGHTEN < 255 ? b+LIGHTEN : 255) << 8, False));
+    WMSetDarkGrayColor(f->scr, WMCreateRGBColor(f->scr, (r-DARKEN > 0 ? r-DARKEN : 0) << 8,
+                                                        (g-DARKEN > 0 ? g-DARKEN : 0) << 8,
+                                                        (b-DARKEN > 0 ? b-DARKEN : 0) << 8, False));
+    WMSetGrayColor(f->scr, WMCreateRGBColor(f->scr, r<<8, g<<8, b<<8, False));
+  }
   WMSetApplicationHasAppIcon(f->scr, True);
   WMSetApplicationIconPixmap(f->scr, WMCreatePixmapFromXPMData(f->scr, appicon_xpm));
 
@@ -256,6 +296,15 @@ Bool feInit(myFrontend *f) {
   //WMSetWindowMaxSize(f->win, 280, 2000);
   WMSetWindowMiniwindowPixmap(f->win, WMCreatePixmapFromXPMData(f->scr, appicon_xpm));
   WMSetWindowMiniwindowTitle(f->win, APP_SHORT);
+  int w = WMGetUDIntegerForKey(f->settings, "windowWidth");
+  if (w == 0) w = 280;
+  int h = WMGetUDIntegerForKey(f->settings, "windowHeight");
+  if (h == 0) h = 400;
+  WMResizeWidget(f->win, w, h);
+  
+  WMSetWindowInitialPosition(f->win,
+    WMGetUDIntegerForKey(f->settings, "windowPosX"),
+    WMGetUDIntegerForKey(f->settings, "windowPosY"));
 
   f->songtitlelabel = WMCreateLabel(f->win);
   WMSetLabelText(f->songtitlelabel, "currently playing:");
@@ -330,20 +379,19 @@ Bool feInit(myFrontend *f) {
   WMSetListDoubleAction(f->datalist, cbDoubleClick, f);
   WMSetListUserDrawProc(f->datalist, DrawListItem);
   
-  loadConfig(f);
-  WMSetWidgetBackgroundColor(f->datalist, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->nextsongbutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->playsongbutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->prevsongbutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->sizebutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->songtitlelabel, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->songtitle, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->songartist, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->songtime, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->statuslabel, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->stopsongbutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->quitbutton, f->globalBackgroundColor);
-  WMSetWidgetBackgroundColor(f->win, f->globalBackgroundColor);
+  WMSetWidgetBackgroundColor(f->datalist, f->colorListBack);
+  WMSetWidgetBackgroundColor(f->nextsongbutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->playsongbutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->prevsongbutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->sizebutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->songtitlelabel, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->songtitle, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->songartist, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->songtime, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->statuslabel, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->stopsongbutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->quitbutton, f->colorWindowBack);
+  WMSetWidgetBackgroundColor(f->win, f->colorWindowBack);
 
   //WMEnableUDPeriodicSynchronization(f->settings, True);
   
@@ -372,7 +420,6 @@ Bool feInit(myFrontend *f) {
   WMMapSubwidgets(f->win);
   WMMapWidget(f->win);
 
-  f->playedColor = WMCreateRGBColor(f->scr, 240<<8, 220<<8, 220<<8, False);
 }
 
 void feRun(myFrontend *f) {
@@ -744,17 +791,17 @@ void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
   WMScreen *screen = WMWidgetScreen(lPtr);
   Display *dpy = WMScreenDisplay(screen);
   WMColor *back = (itemPtr->selected ?
-                   WMWhiteColor(screen) :
-                   WMGetWidgetBackgroundColor(lPtr));
+                   f->colorSelectionBack :
+                   f->colorListBack);
   XFillRectangle(dpy,
                  d, WMColorGC(back),
                  0, 0, rect->size.width, rect->size.height);
   if (f->playingSongItem == itemPtr) {
     if (itemPtr->selected) {
-      XFillRectangle(dpy, d, WMColorGC(f->playedColor), 4,
+      XFillRectangle(dpy, d, WMColorGC(f->colorPlayed), 4,
                      2, (unsigned int)ceil((rect->size.width-6)*f->currentRatio), rect->size.height-4);
     } else {
-      XFillRectangle(dpy, d, WMColorGC(f->playedColor), 0,
+      XFillRectangle(dpy, d, WMColorGC(f->colorPlayed), 0,
                      0, (unsigned int)ceil((rect->size.width)*f->currentRatio), rect->size.height);
     }
   }
