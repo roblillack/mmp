@@ -160,7 +160,7 @@ void feSetSongName(myFrontend *f, char *text) {
 //void feSetSongLength(myFrontend*, int sec);
 
 void fePlayingStopped(myFrontend *f) {
-  if (f->playing) {
+  if (f->playing && WMGetListSelectedItem(f->datalist)) {
     // song may be over, but we want the next :)
     if (f->playingSongItem == WMGetListSelectedItem(f->datalist)) {
       cbNextSong(NULL, f);
