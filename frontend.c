@@ -23,7 +23,7 @@
 #include "pixmaps/down.xpm"
 #include "pixmaps/dnd.xpm"
 
-#define WinHeightIfSmall  80
+#define WinHeightIfSmall  70
 #define DARKEN 100
 #define LIGHTEN 100
 
@@ -77,6 +77,8 @@ typedef struct Frontend {
            *stopsongbutton,
            *dirupbutton;
   //         *quitbutton;
+
+  WMLabel *coverImage;
   WMColor *colorWindowBack, *colorListBack, *colorSelectionBack,
           *colorSelectionFore, *colorPlayed;
   char *currentdir;
@@ -93,6 +95,7 @@ typedef struct Frontend {
   Bool playing;
   Bool rewind;
   Bool showUnsupportedFiles;
+  Bool haveCover;
   /*WMColor *globalBackgroundColor;*/
   long secondsPassed;
   long totalLength;
@@ -111,6 +114,8 @@ void BeganDrag(WMView*, WMPoint*);
 void EndedDrag(WMView*, WMPoint*, Bool);
 WMData* FetchDragData(WMView*, char*);
 
+void feFindCover(myFrontend*);
+
 // -----------------------------------------------------------------------------
 
 Frontend* feCreate() {
@@ -123,6 +128,7 @@ Frontend* feCreate() {
   f->playingSongItem = NULL;
   f->playing = False;
   f->rewind = False;
+  f->haveCover = False;
   f->settings = NULL;
   f->WinHeightIfBig = 0;
   f->showUnsupportedFiles = False;
@@ -361,7 +367,7 @@ Bool feInit(myFrontend *f) {
   WMSetWindowTitle(f->win, APP_LONG);
   WMSetWindowCloseAction(f->win, cbQuit, f);
   //WMResizeWidget(f->win, 280, 400);
-  WMSetWindowMinSize(f->win, 280, WinHeightIfSmall);
+  WMSetWindowMinSize(f->win, 250, WinHeightIfSmall);
   //WMSetWindowMaxSize(f->win, 280, 2000);
   WMSetWindowMiniwindowPixmap(f->win, WMCreatePixmapFromXPMData(f->scr, appicon_xpm));
   WMSetWindowMiniwindowTitle(f->win, APP_SHORT);
@@ -379,6 +385,10 @@ Bool feInit(myFrontend *f) {
   WMSetLabelText(f->songtitlelabel, "currently playing:");
   WMSetLabelTextColor(f->songtitlelabel, WMDarkGrayColor(f->scr));*/
 
+  f->coverImage = WMCreateLabel(f->win);
+  WMSetLabelImagePosition(f->coverImage, WACenter);
+  //WMSetWidgetBackgroundColor(f->coverImage, WMCreateRGBColor(f->scr, 255<<8, 0, 0, False));
+
   f->songtitle = WMCreateLabel(f->win);
   //WMSetLabelText(f->songtitle, "no file loaded.");
   WMSetLabelTextAlignment(f->songtitle, WARight);
@@ -393,6 +403,7 @@ Bool feInit(myFrontend *f) {
 
   f->songtime = WMCreateLabel(f->win);
   WMSetLabelText(f->songtime, NULL);
+  WMSetLabelTextAlignment(f->songtime, WARight);
   WMSetLabelTextColor(f->songtime, WMDarkGrayColor(f->scr));
 
   /*f->statuslabel = WMCreateLabel(f->win);
@@ -638,6 +649,9 @@ void cbPlaySong(WMWidget *self, void *data) {
     return;
   }
 
+  if (f->activeBackend) {
+    (*f->activeBackend->stopNow)();
+  }
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
   strncpy(buf, WMGetListSelectedItem(f->datalist)->text, sizeof(buf)-1);
@@ -659,6 +673,51 @@ void cbPlaySong(WMWidget *self, void *data) {
   f->playing = True;
   f->activeBackend = b;
   f->currentRatio = 0.0f;
+
+  feFindCover(f);
+}
+
+void feFindCover(myFrontend *f) {
+  char buf[MAXPATHLEN];
+  char *testnames[] = {
+    "cover.jpg",
+    "COVER.JPG",
+    "cover.png",
+    "COVER.PNG",
+    NULL
+  };
+
+  f->haveCover = False;
+  cbSizeChanged(f, NULL);
+
+  strncpy(buf, f->playingSongDir, MAXPATHLEN);
+  buf[sizeof(buf)-1] = '\0';
+  if (strlen(buf) >= sizeof(buf) - 11) return;
+
+  char *startpos = buf + strlen(buf);
+  *startpos = '/';
+  startpos++;
+
+  RImage *orig = NULL;
+  int i;
+  for (i = 0; testnames[i] != NULL; i++) {
+    strncpy(startpos, testnames[i], 10);
+    if ((orig = RLoadImage(WMScreenRContext(f->scr), buf, 0)) != NULL)
+      break;
+  }
+  if (orig == NULL) return;
+  D2("pic found: %s\n", buf);
+  RImage *scaled = RSmoothScaleImage(orig, 50, 50);
+  // TODO: treshold?
+  WMPixmap *pix = WMCreatePixmapFromRImage(f->scr, scaled, 127);
+  WMSetLabelImage(f->coverImage, pix);
+  f->haveCover = True;
+  WMReleasePixmap(pix);
+  RReleaseImage(scaled);
+  RReleaseImage(orig);
+  cbSizeChanged(f, NULL);
+
+  return;
 }
 
 void feResetDisplay(myFrontend *f) {
@@ -776,55 +835,44 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     f->bigsize = 1;
   }
   
-  /*WMResizeWidget(f->songtitlelabel, w - 20, 16);
-  WMMoveWidget(f->songtitlelabel, 10, 15);*/
-  
-  WMResizeWidget(f->songtitle, w - 10, 18);
-  WMMoveWidget(f->songtitle, 5, 25);
-  
-  WMResizeWidget(f->songartist, w - 110, 15);
-  WMMoveWidget(f->songartist, 105, 7);
-  
-  WMResizeWidget(f->songtime, 100, 15);
-  WMMoveWidget(f->songtime, 5, 7);
-
-  /*WMResizeWidget(f->statuslabel, 200, 14);
-  WMMoveWidget(f->statuslabel, 7, 242);*/
-  
-  if (f->bigsize) {
-    WMResizeWidget(f->prevsongbutton, 20, 20);
-    WMMoveWidget(f->prevsongbutton, w - 85, 45);
-    WMResizeWidget(f->stopsongbutton, 20, 20);
-    WMMoveWidget(f->stopsongbutton, w - 65, 45);
-    WMResizeWidget(f->playsongbutton, 20, 20);
-    WMMoveWidget(f->playsongbutton, w - 45, 45);
-    WMResizeWidget(f->nextsongbutton, 20, 20);
-    WMMoveWidget(f->nextsongbutton, w - 25, 45);
+  if (f->haveCover) {
+    WMResizeWidget(f->songartist, w - 66, 15);
+    WMMoveWidget(f->songartist, 60, 7);
+    WMResizeWidget(f->songtitle, w - 66, 20);
+    WMMoveWidget(f->songtitle, 60, 22);
+    WMResizeWidget(f->coverImage, 50, 50);
+    WMMoveWidget(f->coverImage, 7, 7);
+    WMResizeWidget(f->songtime, w - 148, 14);
+    WMMoveWidget(f->songtime, 60, 49);
   } else {
-    WMResizeWidget(f->prevsongbutton, 20, 20);
-    WMMoveWidget(f->prevsongbutton, w - 85, 55);
-    WMResizeWidget(f->stopsongbutton, 20, 20);
-    WMMoveWidget(f->stopsongbutton, w - 65, 55);
-    WMResizeWidget(f->playsongbutton, 20, 20);
-    WMMoveWidget(f->playsongbutton, w - 45, 55);
-    WMResizeWidget(f->nextsongbutton, 20, 20);
-    WMMoveWidget(f->nextsongbutton, w - 25, 55);
+    WMResizeWidget(f->songartist, w - 11, 15);
+    WMMoveWidget(f->songartist, 5, 7);
+    WMResizeWidget(f->songtitle, w - 11, 20);
+    WMMoveWidget(f->songtitle, 5, 22);
+    WMResizeWidget(f->coverImage, 1, 1);
+    WMMoveWidget(f->coverImage, w+1, h+1);
+    WMResizeWidget(f->songtime, w - 93, 14);
+    WMMoveWidget(f->songtime, 5, 49);
   }
-  
-  /*WMResizeWidget(f->quitbutton, 30, 15);
-  WMMoveWidget(f->quitbutton, w - 37, WinHeightIfSmall-15);*/
-  
-  WMResizeWidget(f->sizebutton, 30, 15);
-  WMMoveWidget(f->sizebutton, 7, WinHeightIfSmall-15);
 
-  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
+  WMResizeWidget(f->prevsongbutton, 20, 20);
+  WMMoveWidget(f->prevsongbutton, w - 86, 44);
+  WMResizeWidget(f->stopsongbutton, 20, 20);
+  WMMoveWidget(f->stopsongbutton, w - 66, 44);
+  WMResizeWidget(f->playsongbutton, 20, 20);
+  WMMoveWidget(f->playsongbutton, w - 46, 44);
+  WMResizeWidget(f->nextsongbutton, 20, 20);
+  WMMoveWidget(f->nextsongbutton, w - 26, 44);
+  
+  WMResizeWidget(f->sizebutton, 30, 14);
+  WMMoveWidget(f->sizebutton, 7, 57);
+
+  WMMoveWidget(f->dirlabel, 7, WinHeightIfSmall+1);
+  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+15);
   if (f->bigsize) {
-    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-1);
-    WMMoveWidget(f->dirlabel, 35, WinHeightIfSmall-15);
-    WMResizeWidget(f->dirlabel, w - 42, 15);
+    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-15);
+    WMResizeWidget(f->dirlabel, w - 14, 14);
     setDirLabel(f, f->currentdir);
-  } else {
-    WMMoveWidget(f->dirlabel, 0, WinHeightIfSmall);
   }
 }
 

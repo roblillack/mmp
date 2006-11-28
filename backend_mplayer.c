@@ -57,7 +57,7 @@ mplayerBackend *mplayer_create(Frontend *f) {
   mplayer_backend.frontend = f;
   mplayer_backend.clipInfo = NULL;
   mplayer_init();
-  return (mplayerBackend*)&mplayer_backend;
+  return &mplayer_backend;
 }
 
 Bool mplayer_isPlaying() {
@@ -134,7 +134,7 @@ void mplayer_cb_stopped(void *cdata) {
   FE("cbStopped");
 }
 
-void mplayer_stop(mplayerBackend *b) {
+void mplayer_stop() {
   FB("beStop");
   if (mplayer_backend.childPid) {
     D1("sending SIGINT...\n");
@@ -143,7 +143,7 @@ void mplayer_stop(mplayerBackend *b) {
   FE("beStop\n");
 }
 
-void mplayer_stopNow(mplayerBackend* b) {
+void mplayer_stopNow() {
   FB("beStopNow");
   if (mplayer_backend.childPid) {
     kill(mplayer_backend.childPid, SIGINT);
@@ -156,17 +156,17 @@ void mplayer_stopNow(mplayerBackend* b) {
   FE("beStopNow");
 }
 
-void mplayer_cleanup(mplayerBackend *b) {
+void mplayer_cleanup() {
   FB("cleanUpChild");
   close(mplayer_backend.pipeFromPlayer[0]);
   close(mplayer_backend.pipeToPlayer[1]);
   WMDeleteInputHandler(mplayer_backend.playerHandlerID);
   WMDeletePipedSignalHandler(mplayer_backend.signalHID);
-  mplayer_init(b);
+  mplayer_init();
   FE("cleanUpChild");
 }
 
-WMArray* mplayer_getSupportedExtensions(mplayerBackend* b) {
+WMArray* mplayer_getSupportedExtensions() {
   WMArray* types = WMCreateArray(12);
   WMAddToArray(types, "mp3");
   WMAddToArray(types, "ogg");

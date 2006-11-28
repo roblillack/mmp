@@ -13,11 +13,11 @@ int main(int argc, char *argv[]) {
   WMInitializeApplication("mmp", &argc, argv);
   frontend = feCreate();
 
-#ifdef HAVE_BACKEND_MPG123
-  feAddBackend(frontend, mpg123_create(frontend));
+#ifdef HAVE_BACKEND_mpg123
+  feAddBackend(frontend, (Backend*)mpg123_create(frontend));
 #endif
-#ifdef HAVE_BACKEND_MPLAYER
-  feAddBackend(frontend, mplayer_create(frontend));
+#ifdef HAVE_BACKEND_mplayer
+  feAddBackend(frontend, (Backend*)mplayer_create(frontend));
 #endif
 
   feInit(frontend);

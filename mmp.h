@@ -4,7 +4,6 @@
 #include "WMAddOns.h"
 
 #define   APP_SHORT     "mmp"
-//#define   APP_VERSION   "v0.4"
 #define   APP_LONG      APP_SHORT" v"VERSION
 
 //#define DEBUG
