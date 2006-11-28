@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <X11/Xlib.h>
 #include <X11/Xmd.h>
 
@@ -286,3 +287,145 @@ WMColor* WMGetUDColorForKey(WMUserDefaults *s, char *key, WMScreen *scr) {
   return WMCreateRGBColor(scr, (color >> 16) << 8, color & 0xff00, (color & 0xff) << 8, False);
 }
 
+typedef struct {
+  int statusPipe[2];
+  WMCallback *callback;
+  void *clientData;
+  WMHandlerID hid;
+  struct sigaction act;
+} WMSigInfo;
+
+static WMSigInfo wmsiginfo[NSIG];
+static sigset_t wmsigset;
+
+void pseudohandler(int signal) {
+  fprintf(stderr, "pseudohandler BEGIN\n");
+  fprintf(stderr, "signal: %i, NSIG: %i, cb: 0x%x\n", signal, NSIG, wmsiginfo[signal].callback);
+  fflush(stderr);
+  if (signal > 0 && signal < NSIG && wmsiginfo[signal].callback) {
+    /*if (++wmsiginfo[signal].timesCalled == 0)
+      wmsiginfo[signal].timesCalled--;*/
+    wmsiginfo[signal].hid = WMAddIdleHandler(wmsiginfo[signal].callback,
+                                             wmsiginfo[signal].clientData);
+  }
+  fprintf(stderr, "pseudohandler END\n");
+  fflush(stderr);
+}
+
+/*void handleSignal(void *data) {
+  fprintf(stderr, "handlesignal BEGIN\n");
+  fflush(stderr);
+  int signal = (int) data;
+  sigset_t s;// = wmsigset;
+  //sigdelset(&s, signal);
+  while (sigpending(&s) == 0 && sigismember(&s, signal)) {
+    fprintf(stderr, "  signal %i pending.\n", signal);
+    fflush(stderr);
+    s = wmsigset;
+    sigdelset(&s, signal);
+    //sigfillset(&s);
+    //sigdelset(&s, signal);
+    //sigemptyset(&s);
+    //sigaddset(&s, signal);
+    sigsuspend(&s);
+    // we have no problem if the pseudohandler is called here,
+    // because sigpending would not change, but timesCalled would
+    sigemptyset(&s);
+    sigaddset(&s, signal);
+    sigprocmask(SIG_BLOCK, &s, &wmsigset);
+  }
+  if (wmsiginfo[signal].callback) {
+    while (wmsiginfo[signal].timesCalled > 0) {
+      (*wmsiginfo[signal].callback)(wmsiginfo[signal].clientData);
+      wmsiginfo[signal].timesCalled--;
+    }
+    sigaddset(&wmsigset, signal);
+    WMAddTimerHandler(100, handleSignal, data);
+  }
+  fprintf(stderr, "handleSignal END\n");
+  fflush(stderr);
+}*/
+
+WMHandlerID WMAddIdleSignalHandler(int sig, WMCallback *cb, void *cdata) {
+  /*sigset_t s;
+  sigemptyset(&s);
+  sigaddset(&s, sig);
+  sigprocmask(SIG_BLOCK, &s, &wmsigset);
+  sigaddset(&wmsigset, sig);
+  signal(sig, pseudohandler);*/
+  wmsiginfo[sig].clientData = cdata;
+  wmsiginfo[sig].callback = cb;
+  //wmsiginfo[sig].timesCalled = 0;
+  signal(sig, pseudohandler);
+  return (WMHandlerID) sig;
+  //return WMAddTimerHandler(100, handleSignal, (void*)sig);
+}
+
+void WMDeleteIdleSignalHandler(WMHandlerID hid) {
+  int sig = (int) hid;
+  signal(sig, SIG_IGN);
+  WMDeleteIdleHandler(wmsiginfo[sig].hid);
+  wmsiginfo[sig].hid = NULL;
+  wmsiginfo[sig].callback = NULL;
+  wmsiginfo[sig].clientData = NULL;
+  return;
+}
+
+void pipedsignalhandler(int sig) {
+  fprintf(stderr, "SIGNAL %i received.\n", sig);
+  fflush(stderr);
+  char buf;
+
+  if (sig <= 0 || sig >= NSIG) return;
+
+  //while (read(wmsiginfo[sig].statusPipe[0], &buf, 1)) ;
+  if (wmsiginfo[sig].callback) {
+    write(wmsiginfo[sig].statusPipe[1], &buf, 1);
+  }
+}
+
+void pipeinputhandler(int fd, int mask, void *data) {
+  fprintf(stderr, "pipe input %i received.\n", data);
+  fflush(stderr);
+  char buf;
+  int sig = (int) data;
+  while (read(wmsiginfo[sig].statusPipe[0], &buf, 1) > 0) {
+    if (wmsiginfo[sig].callback) {
+      (*wmsiginfo[sig].callback)(wmsiginfo[sig].clientData);
+    }
+  }
+}
+
+WMHandlerID WMAddPipedSignalHandler(int sig, WMCallback *cb, void *data) {
+  if (pipe(wmsiginfo[sig].statusPipe) == -1) {
+    perror("could not set up signal handling pipe.\n");
+    return NULL;
+  }
+  wmsiginfo[sig].callback = cb;
+  wmsiginfo[sig].clientData = data;
+  wmsiginfo[sig].hid = WMAddInputHandler(wmsiginfo[sig].statusPipe[0], 1, 
+                                         pipeinputhandler, (void*) sig);
+  struct sigaction act;
+  act.sa_handler = pipedsignalhandler;
+  sigfillset(&act.sa_mask);
+  act.sa_flags = SA_NOCLDSTOP | SA_RESTART;
+  sigaction(sig, &act, &wmsiginfo[sig].act);
+  return (WMHandlerID)sig;
+}
+
+void WMDeletePipedSignalHandler(WMHandlerID hid) {
+  int sig = (int) hid;
+  char buf;
+  sigaction(sig, &wmsiginfo[sig].act, NULL);
+  WMDeleteInputHandler(wmsiginfo[sig].hid);
+  /*while (read(wmsiginfo[sig].statusPipe[0], &buf, 1) > 0) {
+    fprintf(stderr, "READ A BYTE\n");
+    fflush(stderr);
+  }*/
+  close(wmsiginfo[sig].statusPipe[1]);
+  close(wmsiginfo[sig].statusPipe[0]);
+  wmsiginfo[sig].hid = NULL;
+  wmsiginfo[sig].callback = NULL;
+  wmsiginfo[sig].clientData = NULL;
+  return;
+}

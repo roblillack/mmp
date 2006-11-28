@@ -23,4 +23,11 @@ Bool WMSetDarkGrayColor(WMScreen*, WMColor*);
 
 void WMSetUDColorForKey(WMUserDefaults*, WMColor*, char *);
 WMColor* WMGetUDColorForKey(WMUserDefaults *, char *, WMScreen*);
+
+WMHandlerID WMAddIdleSignalHandler(int, WMCallback*, void*);
+void WMDeleteIdleSignalHandler(WMHandlerID);
+WMHandlerID WMAddPipedSignalHandler(int, WMCallback*, void*);
+void WMDeletePipedSignalHandler(WMHandlerID);
+#define WMAddSignalHandler(x,y,z) WMAddPipedSignalHandler(x,y,z)
+#define WMDeleteSignalHandler(x) WMDeletePipedSignalHandler(x)
 #endif

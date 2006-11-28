@@ -1,33 +1,28 @@
-#include <mmp.h>
+#include "mmp.h"
 #include <string.h>
-#include <signal.h>
 #include <sys/stat.h>
 
-static Frontend *frontend = NULL;
-
-void handleSigchld(int sig) {
-  if (frontend) {
-    feHandleSigChild(frontend);
-  }
-}
+#ifdef HAVE_BACKEND_MPLAYER
+Backend* mplayer_create(Frontend*);
+#endif
 
 int main(int argc, char *argv[]) {
-  Backend *be;
+  Frontend *frontend;
 
   //_Xdebug = True;
   WMInitializeApplication("mmp", &argc, argv);
   frontend = feCreate();
-  be = beCreate();
 
-  if (!beInit(be)) {
-    return 1;
-  } else {
-    feAddBackend(frontend, be);
-  }
+#ifdef HAVE_BACKEND_MPG123
+  feAddBackend(frontend, mpg123_create(frontend));
+#endif
+#ifdef HAVE_BACKEND_MPLAYER
+  feAddBackend(frontend, mplayer_create(frontend));
+#endif
 
   feInit(frontend);
-  if (argv[1]) {
-    struct stat sb;
+  struct stat sb;
+  if (argv[1] && stat(argv[1], &sb) == 0) {
     stat(argv[1], &sb);
     if (S_ISREG(sb.st_mode)) {
       char *sep;
@@ -45,17 +40,11 @@ int main(int argc, char *argv[]) {
       }
     } else if (S_ISDIR(sb.st_mode)) {
       feShowDir(frontend, argv[1]);
-    } else {
-      feShowDir(frontend, ".");
     }
   } else {
     feShowDir(frontend, NULL);
   }
 
-  if (signal(SIGCHLD, handleSigchld) == SIG_ERR) {
-    perror("could not setup signal handler");
-    return False;
-  }
 
   feRun(frontend);
 

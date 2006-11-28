@@ -17,6 +17,7 @@ typedef struct Backend {
       pipeFromPlayer[2];
   pid_t childPid;
   WMHandlerID playerHandlerID;
+  Bool gotSigChild;
 } myBackend;
 
 static myBackend *firstBackend = NULL;
@@ -38,6 +39,7 @@ Backend *beCreate() {
 Bool beInit(myBackend *b) {
   // search for mpg123....
   b->childPid = 0;
+  b->gotSigChild = False;
   return True;
 }
 
@@ -124,13 +126,21 @@ void beStop(myBackend* b) {
   }
 }
 
+void beGotSigChild(myBackend *b) {
+  if (b) {
+    b->gotSigChild = True;
+  }
+}
+
 void beHandleSigChild(myBackend* b) {
-  close(b->pipeFromPlayer[0]);
-  close(b->pipeToPlayer[1]);
-  WMDeleteInputHandler(b->playerHandlerID);
-  b->childPid = 0;
-  beInit(b);
-  PlayingStopped(b);
+  if (b->gotSigChild) {
+    close(b->pipeFromPlayer[0]);
+    close(b->pipeToPlayer[1]);
+    WMDeleteInputHandler(b->playerHandlerID);
+    b->childPid = 0;
+    beInit(b);
+    PlayingStopped(b);
+  }
 }
 
 WMArray* beGetSupportedExtensions(Backend* b) {

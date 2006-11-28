@@ -1,5 +1,4 @@
 #include "mmp.h"
-#include "WMAddOns.h"
 
 #include <assert.h>
 #include <dirent.h>
@@ -24,7 +23,9 @@
 #include "pixmaps/down.xpm"
 #include "pixmaps/dnd.xpm"
 
-#define   WinHeightIfSmall  100
+#define WinHeightIfSmall  80
+#define DARKEN 100
+#define LIGHTEN 100
 
 
 #define ucfree(x) if(x) { wfree(x); x = NULL; }
@@ -61,12 +62,12 @@ typedef struct Frontend {
   Display *dpy;
   WMWindow *win;
   WMScreen *scr;
-  WMLabel *songtitlelabel,
-          *songtitle,
+  //WMLabel *songtitlelabel,
+  WMLabel *songtitle,
           *songartist,
-          *statuslabel,
           *songtime,
           *dirlabel;
+  WMLabel *progressLabel;
   WMList *datalist;
 
   WMButton *sizebutton,
@@ -74,8 +75,8 @@ typedef struct Frontend {
            *prevsongbutton,
            *nextsongbutton,
            *stopsongbutton,
-           *dirupbutton,
-           *quitbutton;
+           *dirupbutton;
+  //         *quitbutton;
   WMColor *colorWindowBack, *colorListBack, *colorSelectionBack,
           *colorSelectionFore, *colorPlayed;
   char *currentdir;
@@ -95,6 +96,7 @@ typedef struct Frontend {
   /*WMColor *globalBackgroundColor;*/
   long secondsPassed;
   long totalLength;
+  Backend *activeBackend;
 } myFrontend;
 
 // other stuff
@@ -135,42 +137,103 @@ Frontend* feCreate() {
 }
 
 void feAddBackend(myFrontend *f, Backend *b) {
+  D3("feAddBackend: f=0x%x, b=0x%x\n", f, b);
   if (WMFindInArray(f->backends, NULL, b) == WANotFound) {
     WMAddToArray(f->backends, b);
-    beAddFrontend(b, f);
   }
 }
 
 void feRemoveBackend(myFrontend *f, Backend *b) {
+  D3("feRemoveBackend: f=0x%x, b=0x%x\n", f, b);
   int index;
   if ((index = WMFindInArray(f->backends, NULL, b)) != WANotFound) {
     WMDeleteFromArray(f->backends, index);
-    beRemoveFrontend(b, f);
   }
 }
 
 void feSetArtist(myFrontend *f, char *text) {
+  FB("feSetArtist");
   WMSetLabelText(f->songartist, text);
+  FE("feSetArtist");
 }
 
-void feSetSongName(myFrontend *f, char *text) {
+void feSetTitle(myFrontend *f, char *text) {
+  FB("feSetSongName");
   WMSetLabelText(f->songtitle, text);
+  FE("feSetSongName");
 }
 
 //void feSetSongLength(myFrontend*, int sec);
 
-void fePlayingStopped(myFrontend *f) {
-  if (f->playing && WMGetListSelectedItem(f->datalist)) {
-    // song may be over, but we want the next :)
-    if (f->playingSongItem == WMGetListSelectedItem(f->datalist)) {
-      cbNextSong(NULL, f);
-    } else {
-      cbPlaySong(NULL, f);
+int findFirstPlayableFile(myFrontend *f) {
+  WMArrayIterator i;
+  WMListItem *item;
+
+  WM_ITERATE_ARRAY(WMGetListItems(f->datalist), item, i) {
+    if (item->uflags & IsFile &&
+        GetBackendSupportingFile(f, item->text) != NULL) {
+      return i;
     }
   }
+
+  return WANotFound;
+}
+
+int findPrevPlayableFile(myFrontend *f) {
+  WMArrayIterator i;
+  WMListItem *item;
+  int act;
+
+  act = WMGetListSelectedItemRow(f->datalist);
+  WM_ETARETI_ARRAY(WMGetListItems(f->datalist), item, i) {
+    if (i < act && item->uflags & IsFile &&
+        GetBackendSupportingFile(f, item->text) != NULL) {
+      return i;
+    }
+  }
+
+  return WANotFound;
+}
+
+int findNextPlayableFile(myFrontend *f) {
+  WMArrayIterator i;
+  WMListItem *item;
+  int act;
+
+  act = WMGetListSelectedItemRow(f->datalist);
+  WM_ITERATE_ARRAY(WMGetListItems(f->datalist), item, i) {
+    if (i > act && item->uflags & IsFile &&
+        GetBackendSupportingFile(f, item->text) != NULL) {
+      return i;
+    }
+  }
+
+  return WANotFound;
+}
+
+void fePlayingStopped(void *data) {
+  myFrontend *f = (myFrontend*) data;
+  FB("fePlayingStopped");
+  Bool goOn = f->playing;
+  int next = findNextPlayableFile(f);
+  feResetDisplay(f);
+
+  if (!goOn) return;
+
+  WMUnselectAllListItems(f->datalist);
+  if (next == WANotFound && f->rewind) {
+    next = findFirstPlayableFile(f);
+  }
+
+  if (next != WANotFound) {
+    WMSelectListItem(f->datalist, next);
+    cbPlaySong(NULL, f);
+  }
+  FE("fePlayingStopped");
 }
 
 void updateTimeDisplay(myFrontend *f) {
+  //D2("updateTimeDisplay: f=0x%x\n", f);
   char buf[20];
 
   if (f->secondsPassed >= 0 && f->totalLength >= 0) {
@@ -182,7 +245,7 @@ void updateTimeDisplay(myFrontend *f) {
     f->currentRatio = 0.0;
   }
 
-  if (strncmp(WMGetLabelText(f->songtime), buf, sizeof(buf))) {
+  if (!WMGetLabelText(f->songtime) || strncmp(WMGetLabelText(f->songtime), buf, sizeof(buf))) {
     WMSetLabelText(f->songtime, buf);
     if (f->playingSongItem)
       // but i don't want to redisplay the whole widget :(
@@ -191,24 +254,28 @@ void updateTimeDisplay(myFrontend *f) {
 }
 
 void feSetFileLength(myFrontend *f, long length) {
+  //D3("feSetFileLength: f=0x%x, length=%i\n", f, length);
   f->totalLength = length;
   updateTimeDisplay(f);
 }
 void feSetCurrentPosition(myFrontend *f, long passed) {
+  //D3("feSetCurrentPosition: f=0x%x, passed=%i\n", f, passed);
   f->secondsPassed = passed;
   updateTimeDisplay(f);
 }
 
 void loadConfig(myFrontend *f) {
+  FB("loadConfig");
   if (f->settings == NULL) {
     char conf[MAXPATHLEN];
     snprintf(conf, sizeof(conf), "%s/.mmprc", getenv("HOME"));
     f->settings = WMGetDefaultsFromPath(conf);
   }
-  
+  FE("loadConfig");
 }
 
 void saveConfig(myFrontend *f) {
+  FB("saveConfig");
   WMSetUDIntegerForKey(f->settings,
                        WMWidgetWidth(f->win), "windowWidth");
   WMSetUDIntegerForKey(f->settings,
@@ -220,6 +287,7 @@ void saveConfig(myFrontend *f) {
   WMSetUDBoolForKey(f->settings, f->rewind, "repeatMode");
   WMSetUDBoolForKey(f->settings, f->showUnsupportedFiles, "showUnsupportedFiles");
   WMSaveUserDefaults(f->settings);
+  FE("saveConfig");
 }
 
 int getColorStringRed(const char *str) {
@@ -247,6 +315,7 @@ int getColorStringBlue(const char *str) {
 }
 
 Bool feInit(myFrontend *f) {
+  _Xdebug=1;
   f->dpy = XOpenDisplay(NULL);
   //scr = WMCreateSimpleApplicationScreen(dpy);
   //scr = WMOpenScreen(NULL);
@@ -274,8 +343,6 @@ Bool feInit(myFrontend *f) {
     int r = getColorStringRed(str);
     int g = getColorStringGreen(str);
     int b = getColorStringBlue(str);
-#define DARKEN 100
-#define LIGHTEN 100
     WMSetBlackColor(f->scr, WMCreateRGBColor(f->scr, (r-2*DARKEN > 0 ? r-2*DARKEN : 0) << 8,
                                                      (g-2*DARKEN > 0 ? g-2*DARKEN : 0) << 8,
                                                      (b-2*DARKEN > 0 ? b-2*DARKEN : 0) << 8, False));
@@ -308,29 +375,29 @@ Bool feInit(myFrontend *f) {
     WMGetUDIntegerForKey(f->settings, "windowPosX"),
     WMGetUDIntegerForKey(f->settings, "windowPosY"));
 
-  f->songtitlelabel = WMCreateLabel(f->win);
+  /*f->songtitlelabel = WMCreateLabel(f->win);
   WMSetLabelText(f->songtitlelabel, "currently playing:");
-  WMSetLabelTextColor(f->songtitlelabel, WMDarkGrayColor(f->scr));
+  WMSetLabelTextColor(f->songtitlelabel, WMDarkGrayColor(f->scr));*/
 
   f->songtitle = WMCreateLabel(f->win);
-  WMSetLabelText(f->songtitle, "no file loaded.");
+  //WMSetLabelText(f->songtitle, "no file loaded.");
   WMSetLabelTextAlignment(f->songtitle, WARight);
   WMSetLabelTextColor(f->songtitle, WMCreateRGBColor(f->scr, 128<<8, 0, 0, False));
   WMSetLabelFont(f->songtitle, WMSystemFontOfSize(f->scr, 18));
 
   f->songartist = WMCreateLabel(f->win);
-  WMSetLabelText(f->songartist, APP_LONG);
+  //WMSetLabelText(f->songartist, APP_LONG);
   WMSetLabelTextAlignment(f->songartist, WARight);
   /*WMSetWidgetBackgroundColor(songartist, WMCreateRGBColor(scr, 222<<8, 0, 0, False));*/
   WMSetLabelTextColor(f->songartist, WMCreateRGBColor(f->scr, 64<<8, 0, 0, False));
 
   f->songtime = WMCreateLabel(f->win);
-  WMSetLabelText(f->songtime, "");
+  WMSetLabelText(f->songtime, NULL);
   WMSetLabelTextColor(f->songtime, WMDarkGrayColor(f->scr));
 
-  f->statuslabel = WMCreateLabel(f->win);
+  /*f->statuslabel = WMCreateLabel(f->win);
   WMSetLabelTextColor(f->statuslabel, WMDarkGrayColor(f->scr));
-  WMSetLabelFont(f->statuslabel, WMSystemFontOfSize(f->scr, 10));
+  WMSetLabelFont(f->statuslabel, WMSystemFontOfSize(f->scr, 10));*/
 
   f->prevsongbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonImage(f->prevsongbutton, WMCreatePixmapFromXPMData(f->scr, prev_xpm));
@@ -360,12 +427,12 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->nextsongbutton, cbNextSong, f);
   WMSetButtonBordered(f->nextsongbutton, False);
 
-  f->quitbutton = WMCreateButton(f->win, WBTMomentaryPush);
+  /*f->quitbutton = WMCreateButton(f->win, WBTMomentaryPush);
   WMSetButtonText(f->quitbutton, "quit");
   WMSetButtonBordered(f->quitbutton, False);
   WMSetButtonAction(f->quitbutton, cbQuit, f);
   //WMSetBalloonTextForView("quit the program.", WMWidgetView(f->quitbutton));
-  WMSetButtonFont(f->quitbutton, WMSystemFontOfSize(f->scr, 10));
+  WMSetButtonFont(f->quitbutton, WMSystemFontOfSize(f->scr, 10));*/
 
   f->sizebutton = WMCreateCustomButton(f->win, WBBPushInMask);
   WMSetButtonImage(f->sizebutton, WMCreatePixmapFromXPMData(f->scr, down_xpm));
@@ -392,18 +459,19 @@ Bool feInit(myFrontend *f) {
   WMSetWidgetBackgroundColor(f->playsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->prevsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->sizebutton, f->colorWindowBack);
-  WMSetWidgetBackgroundColor(f->songtitlelabel, f->colorWindowBack);
+  //WMSetWidgetBackgroundColor(f->songtitlelabel, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->songtitle, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->songartist, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->songtime, f->colorWindowBack);
-  WMSetWidgetBackgroundColor(f->statuslabel, f->colorWindowBack);
+  //WMSetWidgetBackgroundColor(f->statuslabel, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->stopsongbutton, f->colorWindowBack);
-  WMSetWidgetBackgroundColor(f->quitbutton, f->colorWindowBack);
+  //WMSetWidgetBackgroundColor(f->quitbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->win, f->colorWindowBack);
 
   //WMEnableUDPeriodicSynchronization(f->settings, True);
   
   /* layout */
+  feResetDisplay(f);
   cbSizeChanged(f, NULL);
 
   /* mask mouse events while dragging */
@@ -450,7 +518,7 @@ Backend* GetBackendSupportingFile(myFrontend *f, const char *filename) {
   // TODO: what to do with files w/o extension?
   if ((ext = rindex(filename, '.')) && strlen(++ext) > 0) {
     WM_ITERATE_ARRAY(f->backends, b, i) {
-      WM_ITERATE_ARRAY(beGetSupportedExtensions(b), a, j) {
+      WM_ITERATE_ARRAY((*b->getSupportedExtensions)(), a, j) {
         if (strcasecmp(a, ext) == 0) return b;
       }
     }
@@ -553,7 +621,9 @@ void cbDoubleClick(WMWidget *self, void *data) {
 }
 
 void cbPlaySong(WMWidget *self, void *data) {
+  D2("cbPlaySong: f=0x%x\n", data);
   myFrontend *f = (myFrontend*) data;
+  Backend *b;
   char buf[MAXPATHLEN];
 
   /* selected entry not a file? */
@@ -563,7 +633,11 @@ void cbPlaySong(WMWidget *self, void *data) {
     return;
   }
 
-  cbStopPlaying(NULL, f);
+  if ((b = GetBackendSupportingFile(f, WMGetListSelectedItem(f->datalist)->text)) == NULL) {
+    printf("no suitable backend found for file: %s\n", WMGetListSelectedItem(f->datalist)->text);
+    return;
+  }
+
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
   strncpy(buf, WMGetListSelectedItem(f->datalist)->text, sizeof(buf)-1);
@@ -571,10 +645,11 @@ void cbPlaySong(WMWidget *self, void *data) {
   char *dot = rindex(buf, '.');
   if (dot) *dot = '\0';
   WMSetLabelText(f->songtitle, buf);
-  WMSetLabelText(f->songartist, APP_LONG);
+  WMSetLabelText(f->songartist, NULL);
 
   snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
            WMGetListSelectedItem(f->datalist)->text);
+  (*b->play)(buf);
 
   ucfree(f->playingSongDir);
   f->playingSongDir = wstrdup(f->currentdir);
@@ -582,24 +657,14 @@ void cbPlaySong(WMWidget *self, void *data) {
   f->playingSongFile = wstrdup(WMGetListSelectedItem(f->datalist)->text);
   f->playingSongItem = WMGetListSelectedItem(f->datalist);
   f->playing = True;
+  f->activeBackend = b;
   f->currentRatio = 0.0f;
-
-  Backend *b;
-  if ((b = GetBackendSupportingFile(f, buf))) {
-    bePlay(b, buf);
-  } else {
-    printf("no suitable backend found for file: %s\n", buf);
-  }
 }
 
-void cbStopPlaying(WMWidget *self, void *data) {
-  myFrontend *f = (myFrontend*) data;
-  Backend *b;
-  WMArrayIterator i;
-
-  WMSetLabelText(f->songartist, APP_LONG);
+void feResetDisplay(myFrontend *f) {
+  WMSetLabelText(f->songartist, NULL);
   WMSetLabelText(f->songtitle, "no file loaded.");
-  WMSetLabelText(f->songtime, "");
+  WMSetLabelText(f->songtime, NULL);
 
   ucfree(f->playingSongDir);
   ucfree(f->playingSongFile);
@@ -608,18 +673,22 @@ void cbStopPlaying(WMWidget *self, void *data) {
   f->secondsPassed = -1;
   f->totalLength = -1;
   f->currentRatio = 0.0;
+  f->activeBackend = NULL;
   WMRedisplayWidget(f->datalist);
-
-  WM_ITERATE_ARRAY(f->backends, b, i) {
-    beStop(b);
-  }
 }
 
-void feHandleSigChild(myFrontend *f) {
-  WMArrayIterator i;
+void cbStopPlaying(WMWidget *self, void *data) {
+  FB("cbStopPlaying");
+  myFrontend *f = (myFrontend*) data;
   Backend *b;
+  WMArrayIterator i;
 
-  WM_ITERATE_ARRAY(f->backends, b, i) beHandleSigChild(b);
+  WM_ITERATE_ARRAY(f->backends, b, i) {
+    (*b->stopNow)();
+  }
+
+  feResetDisplay(f);
+  FE("cbStopPlaying");
 }
 
 void feMarkFile(myFrontend *f, char *name) {
@@ -637,35 +706,36 @@ void feMarkFile(myFrontend *f, char *name) {
 }
 
 void cbNextSong(WMWidget *self, void *data) {
+  FB("cbNextSong");
   myFrontend *f = (myFrontend*) data;
-  int actnum = WMGetListSelectedItemRow(f->datalist);
-  Bool wasPlaying = f->playing;
-  Bool endReached = False;
 
-  if (wasPlaying) cbStopPlaying(NULL, f);
-  WMUnselectAllListItems(f->datalist);
-  actnum++;
-  if (actnum > WMGetListNumberOfRows(f->datalist) - 1) {
-    actnum = WMGetListNumberOfRows(f->datalist) - 1;
-    endReached = True;
-  }
-  WMSelectListItem(f->datalist, actnum);
-  if (wasPlaying && !endReached)
+  if (f->activeBackend) (*f->activeBackend->stopNow)();
+  //beStopNow(f->activeBackend);
+  feResetDisplay(f);
+  int next = findNextPlayableFile(f);
+
+  if (next != WANotFound) {
+    WMUnselectAllListItems(f->datalist);
+    WMSelectListItem(f->datalist, next);
     cbPlaySong(NULL, f);
+  }
+  FE("cbNextSong");
 }
 
 void cbPrevSong(WMWidget *self, void *data) {
+  FB("cbPrevSong");
   myFrontend *f = (myFrontend*) data;
-  int actnum = WMGetListSelectedItemRow(f->datalist);
-  Bool wasPlaying = f->playing;
 
-  if (wasPlaying) cbStopPlaying(NULL, f);
-  WMUnselectAllListItems(f->datalist);
-  actnum--;
-  if(actnum < 0) actnum = 0;
-  WMSelectListItem(f->datalist, actnum);
-  if (wasPlaying)
+  if (f->activeBackend) (*f->activeBackend->stopNow)();
+  feResetDisplay(f);
+  int next = findPrevPlayableFile(f);
+
+  if (next != WANotFound) {
+    WMUnselectAllListItems(f->datalist);
+    WMSelectListItem(f->datalist, next);
     cbPlaySong(NULL, f);
+  }
+  FE("cbPrevSong");
 }
 
 void cbChangeSize(WMWidget *self, void *data) {
@@ -706,42 +776,56 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     f->bigsize = 1;
   }
   
-  WMResizeWidget(f->songtitlelabel, w - 20, 16);
-  WMMoveWidget(f->songtitlelabel, 10, 15);
+  /*WMResizeWidget(f->songtitlelabel, w - 20, 16);
+  WMMoveWidget(f->songtitlelabel, 10, 15);*/
   
-  WMResizeWidget(f->songtitle, w - 20, 20);
-  WMMoveWidget(f->songtitle, 10, 40);
+  WMResizeWidget(f->songtitle, w - 10, 18);
+  WMMoveWidget(f->songtitle, 5, 25);
   
-  WMResizeWidget(f->songartist, w - 130, 15);
-  WMMoveWidget(f->songartist, 120, 25);
+  WMResizeWidget(f->songartist, w - 110, 15);
+  WMMoveWidget(f->songartist, 105, 7);
   
-  WMResizeWidget(f->songtime, 100, 16);
-  WMMoveWidget(f->songtime, 10, 65);
-  WMResizeWidget(f->statuslabel, 200, 14);
-  WMMoveWidget(f->statuslabel, 7, 242);
+  WMResizeWidget(f->songtime, 100, 15);
+  WMMoveWidget(f->songtime, 5, 7);
+
+  /*WMResizeWidget(f->statuslabel, 200, 14);
+  WMMoveWidget(f->statuslabel, 7, 242);*/
   
-  WMResizeWidget(f->prevsongbutton, 20, 20);
-  WMMoveWidget(f->prevsongbutton, w - 90, 60);
-  WMResizeWidget(f->stopsongbutton, 20, 20);
-  WMMoveWidget(f->stopsongbutton, w - 70, 60);
-  WMResizeWidget(f->playsongbutton, 20, 20);
-  WMMoveWidget(f->playsongbutton, w - 50, 60);
-  WMResizeWidget(f->nextsongbutton, 20, 20);
-  WMMoveWidget(f->nextsongbutton, w - 30, 60);
+  if (f->bigsize) {
+    WMResizeWidget(f->prevsongbutton, 20, 20);
+    WMMoveWidget(f->prevsongbutton, w - 85, 45);
+    WMResizeWidget(f->stopsongbutton, 20, 20);
+    WMMoveWidget(f->stopsongbutton, w - 65, 45);
+    WMResizeWidget(f->playsongbutton, 20, 20);
+    WMMoveWidget(f->playsongbutton, w - 45, 45);
+    WMResizeWidget(f->nextsongbutton, 20, 20);
+    WMMoveWidget(f->nextsongbutton, w - 25, 45);
+  } else {
+    WMResizeWidget(f->prevsongbutton, 20, 20);
+    WMMoveWidget(f->prevsongbutton, w - 85, 55);
+    WMResizeWidget(f->stopsongbutton, 20, 20);
+    WMMoveWidget(f->stopsongbutton, w - 65, 55);
+    WMResizeWidget(f->playsongbutton, 20, 20);
+    WMMoveWidget(f->playsongbutton, w - 45, 55);
+    WMResizeWidget(f->nextsongbutton, 20, 20);
+    WMMoveWidget(f->nextsongbutton, w - 25, 55);
+  }
   
-  WMResizeWidget(f->quitbutton, 30, 15);
-  WMMoveWidget(f->quitbutton, w - 37, WinHeightIfSmall-15);
+  /*WMResizeWidget(f->quitbutton, 30, 15);
+  WMMoveWidget(f->quitbutton, w - 37, WinHeightIfSmall-15);*/
   
   WMResizeWidget(f->sizebutton, 30, 15);
   WMMoveWidget(f->sizebutton, 7, WinHeightIfSmall-15);
 
-  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+15);
-  WMMoveWidget(f->dirlabel, 7, WinHeightIfSmall+1);
+  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+1);
   if (f->bigsize) {
-    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-15);
-    WMResizeWidget(f->dirlabel, w - 14, 15);
+    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-1);
+    WMMoveWidget(f->dirlabel, 35, WinHeightIfSmall-15);
+    WMResizeWidget(f->dirlabel, w - 42, 15);
     setDirLabel(f, f->currentdir);
- }
+  } else {
+    WMMoveWidget(f->dirlabel, 0, WinHeightIfSmall);
+  }
 }
 
 void setDirLabel(myFrontend *f, const char *text) {
