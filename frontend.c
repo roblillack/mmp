@@ -733,6 +733,10 @@ void feResetDisplay(myFrontend *f) {
   f->totalLength = -1;
   f->currentRatio = 0.0;
   f->activeBackend = NULL;
+  if (f->haveCover) {
+    f->haveCover = False;
+    cbSizeChanged(f, NULL);
+  }
   WMRedisplayWidget(f->datalist);
 }
 
