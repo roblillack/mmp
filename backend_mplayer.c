@@ -246,8 +246,8 @@ void mplayer_handle_input(int fd, int mask, void *clientData) {
        buf = strtok_r(NULL, "\n", &laststop)) {
     //printf("buf: %s\n", buf);
 
-    if (strncmp(buf, "A: ", 3) == 0 || strncmp(buf, "V: ", 3) == 0) {
-      start = mplayer_find_next_number(buf+3, 0);
+    if (strncmp(buf, "A:", 2) == 0 || strncmp(buf, "V:", 2) == 0) {
+      start = mplayer_find_next_number(buf+2, 0);
       if (start) {
         feSetCurrentPosition(mplayer_backend.frontend, strtol(start, NULL, 10));
       }
