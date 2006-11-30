@@ -333,7 +333,7 @@ Bool feInit(myFrontend *f) {
   f->rewind = WMGetUDBoolForKey(f->settings, "repeatMode");
   f->showUnsupportedFiles = WMGetUDBoolForKey(f->settings, "showUnsupportedFiles");
 
-  f->colorSelectionFore = WMGetUDColorForKey(f->settings, "colorSelectionForground", f->scr);
+  f->colorSelectionFore = WMGetUDColorForKey(f->settings, "colorSelectionForeground", f->scr);
   if (!f->colorSelectionFore) f->colorSelectionFore = WMBlackColor(f->scr);
   f->colorSelectionBack = WMGetUDColorForKey(f->settings, "colorSelectionBackground", f->scr);
   if (!f->colorSelectionBack) f->colorSelectionBack = WMWhiteColor(f->scr);
@@ -971,6 +971,11 @@ void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
   WMColor *back = (itemPtr->selected ?
                    f->colorSelectionBack :
                    f->colorListBack);
+  WMColor *fore = (itemPtr->selected ?
+                   f->colorSelectionFore :
+                   (itemPtr->uflags & IsUnsupported ? WMDarkGrayColor(screen) : WMBlackColor(screen)));
+
+                   
   XFillRectangle(dpy,
                  d, WMColorGC(back),
                  0, 0, rect->size.width, rect->size.height);
@@ -993,7 +998,7 @@ void DrawListItem(WMList *lPtr, int index, Drawable d, char *text,
   W_PaintText(view, d,
               font,
               4, 0, rect->size.width, WALeft,
-              itemPtr->uflags & IsUnsupported ? WMDarkGrayColor(screen) : WMBlackColor(screen),
+              fore,
               False, text, strlen(text));
   
   if (itemPtr->uflags & IsLink) {
