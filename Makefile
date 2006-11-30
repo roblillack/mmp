@@ -1,7 +1,7 @@
 CC = gcc
 VERSION=0.4
 WINGS_LIBS:=$(shell pkg-config --libs WINGs)
-WINGS_CLFAGS:=$(shell pkg-config --cflags WINGs)
+WINGS_CFLAGS:=$(shell pkg-config --cflags WINGs)
 # if pkg-config not installed/doesn't work, set the above manually to something like
 # (-lintl, -liconv may not be needed)
 #WINGS_CFLAGS:=-I. -I/usr/X11R6/include -I/usr/local/include -I/usr/pkg/include
