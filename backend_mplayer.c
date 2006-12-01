@@ -269,7 +269,7 @@ void mplayer_cleanup() {
 }
 
 WMArray* mplayer_getSupportedExtensions() {
-  WMArray* types = WMCreateArray(12);
+  WMArray* types = WMCreateArray(13);
   WMAddToArray(types, "mp3");
   WMAddToArray(types, "ogg");
   WMAddToArray(types, "flac");
@@ -281,6 +281,7 @@ WMArray* mplayer_getSupportedExtensions() {
   WMAddToArray(types, "flv");
   WMAddToArray(types, "wmv");
   WMAddToArray(types, "mov");
+  WMAddToArray(types, "mpeg");
   WMAddToArray(types, "3gp");
   return types;
 }
