@@ -1,5 +1,5 @@
 CC = gcc
-VERSION=0.4
+VERSION=0.5
 WINGS_LIBS:=$(shell pkg-config --libs WINGs)
 WINGS_CFLAGS:=$(shell pkg-config --cflags WINGs)
 # if pkg-config not installed/doesn't work, set the above manually to something like
