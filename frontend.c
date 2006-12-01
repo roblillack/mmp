@@ -47,6 +47,7 @@ void cbPointerMotion(XEvent*, void*);
 void cbSizeChanged(void*, WMNotification*);
 void cbWindowClosed(WMWidget*, void*);
 void cbQuit(WMWidget*, void*);
+void cbRotateTitle(void*);
 
 typedef enum ItemFlags {
   IsFile = 1,
@@ -77,6 +78,9 @@ typedef struct Frontend {
            *stopsongbutton,
            *dirupbutton;
   //         *quitbutton;
+  //
+  char fileTitle[256];
+  WMHandlerID titleRotationHandler;
 
   WMLabel *coverImage;
   WMColor *colorWindowBack, *colorListBack, *colorSelectionBack,
@@ -139,6 +143,8 @@ Frontend* feCreate() {
   f->colorListBack = NULL;
   f->colorWindowBack = NULL;
   f->colorPlayed = NULL;
+  f->titleRotationHandler = NULL;
+  f->fileTitle[0] = '\0';
   return f;
 }
 
@@ -164,9 +170,43 @@ void feSetArtist(myFrontend *f, char *text) {
 }
 
 void feSetTitle(myFrontend *f, char *text) {
+  char buf[256];
   FB("feSetSongName");
-  WMSetLabelText(f->songtitle, text);
+  if (f->titleRotationHandler) {
+    WMDeleteTimerHandler(f->titleRotationHandler);
+  }
+
+  strncpy(buf, ensure_utf8(text), sizeof(buf));
+  buf[sizeof(buf)-1] = '\0';
+  strncpy(f->fileTitle, buf, sizeof(f->fileTitle));
+  f->fileTitle[sizeof(f->fileTitle)-1] = '\0';
+
+  if (WMWidthOfString(WMSystemFontOfSize(f->scr, 18), buf, strlen(buf))
+      > WMWidgetWidth(f->songtitle) - 5) {
+    // 0xe2 0x80 0x94 == emdash (UTF-8)
+    snprintf(buf+strlen(buf), sizeof(buf)-strlen(buf), " \xe2\x80\x94 ");
+    WMSetLabelText(f->songtitle, buf);
+    f->titleRotationHandler = WMAddPersistentTimerHandler(100, cbRotateTitle, f);
+  } else {
+    WMSetLabelText(f->songtitle, f->fileTitle);
+  }
   FE("feSetSongName");
+}
+
+void cbRotateTitle(void *data) {
+  myFrontend *f = (myFrontend*) data;
+  unsigned char *orig = WMGetLabelText(f->songtitle);
+  char buf[256];
+
+  // correctly cut off one utf8 encoded character
+  int i=1;
+  if (orig[0] < 128) i = 1;
+  else if (orig[0] < 224) i = 2;
+  else if (orig[0] < 240) i = 3;
+  else if (orig[0] < 248) i = 4;
+  else i = 1; // error.
+  snprintf(buf, sizeof(buf) < strlen(orig)+1 ? sizeof(buf) : strlen(orig)+1, "%s%s", orig+i, orig);
+  WMSetLabelText(f->songtitle, buf);
 }
 
 //void feSetSongLength(myFrontend*, int sec);
@@ -658,8 +698,8 @@ void cbPlaySong(WMWidget *self, void *data) {
   buf[sizeof(buf)-1] = '\0';
   char *dot = rindex(buf, '.');
   if (dot) *dot = '\0';
-  WMSetLabelText(f->songtitle, buf);
-  WMSetLabelText(f->songartist, NULL);
+  feSetTitle(f, buf);
+  WMSetLabelText(f->songartist, "no artist or codec information.");
 
   snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
            WMGetListSelectedItem(f->datalist)->text);
@@ -722,7 +762,7 @@ void feFindCover(myFrontend *f) {
 
 void feResetDisplay(myFrontend *f) {
   WMSetLabelText(f->songartist, NULL);
-  WMSetLabelText(f->songtitle, "no file loaded.");
+  feSetTitle(f, "no file loaded.");
   WMSetLabelText(f->songtime, NULL);
 
   ucfree(f->playingSongDir);
@@ -878,6 +918,8 @@ void cbSizeChanged(void *self, WMNotification *notif) {
     WMResizeWidget(f->dirlabel, w - 14, 14);
     setDirLabel(f, f->currentdir);
   }
+
+  feSetTitle(f, f->fileTitle);
 }
 
 void setDirLabel(myFrontend *f, const char *text) {
