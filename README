@@ -1,0 +1,31 @@
+# This mmp-related readme is a stub. You can help people by
+# [mailto:rob@burningsoda.com expanding it].
+
+== BUILDING MMP
+
+Install Window Maker, GNU make, and pkg-config.
+
+Modify the BACKENDS line in Makefile to suit your needs (unless you've
+got a very underpowered machine, you probably want mplayer as the only
+backend) and call `gmake` (or just `make` on GNU/Linux systems).
+After that, copy 'mmp' somewhere.
+
+If you don't have pkg-config installed, you have to alter WINGS_*, too,
+in the Makefile. (Hint for Solaris users: Make shure blastwave's pkg-config
+gets found by make, not /bin/pkg-config)
+
+== CONFIGURING MMP
+
+Configuration settings are stored in ~/.mmprc. Play with them
+and insert something like the following settings to alter the
+colors:
+
+    colorListBackground = "#ffffff";
+    colorSelectionBackground = "#ffffff";
+    colorBaseBackground = "#aeaeaa";
+    colorWindowBackground = "#aeaeaa";
+    colorSelectionForeground = "#000000";
+    colorPlayed = "#f0f0dc";
+    colorTitle = "#800000";
+    colorArtist = "#400000";
+
