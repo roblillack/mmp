@@ -105,6 +105,7 @@ void mplayer_play(const char *filename) {
   /* set up a handler for the reading pipe */
   mplayer_backend.playerHandlerID = WMAddInputHandler(mplayer_backend.pipeFromPlayer[0], 1,
                                                       mplayer_handle_input, NULL);
+  mplayer_backend.signalHID = WMAddSignalHandler(SIGCHLD, mplayer_cb_stopped, NULL);
 
   /* now, start the new process */
   mplayer_backend.childPid = fork();
@@ -134,7 +135,6 @@ void mplayer_play(const char *filename) {
   close(mplayer_backend.pipeFromPlayer[1]);
   close(mplayer_backend.pipeToPlayer[0]);
 
-  mplayer_backend.signalHID = WMAddSignalHandler(SIGCHLD, mplayer_cb_stopped, NULL);
   FE("bePlay");
 }
 
@@ -245,8 +245,13 @@ void mplayer_stopNow() {
   if (mplayer_backend.childPid) {
     kill(mplayer_backend.childPid, SIGINT);
     int status;
+    int i = 0;
     do {
       wait(&status);
+      if (i == 100) kill(mplayer_backend.childPid, SIGTERM);
+      if (i == 200) kill(mplayer_backend.childPid, SIGKILL);
+      D1("waiting...\n");
+      i++;
     } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     mplayer_cleanup();
   }
