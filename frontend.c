@@ -84,7 +84,7 @@ typedef struct Frontend {
 
   WMLabel *coverImage;
   WMColor *colorWindowBack, *colorListBack, *colorSelectionBack,
-          *colorSelectionFore, *colorPlayed;
+          *colorSelectionFore, *colorPlayed, *colorTitle, *colorArtist;
   char *currentdir;
   int bigsize, largestnumber, VisibleRecord, ListHeight,
     WinHeightIfBig, fieldsChanged;
@@ -143,6 +143,8 @@ Frontend* feCreate() {
   f->colorListBack = NULL;
   f->colorWindowBack = NULL;
   f->colorPlayed = NULL;
+  f->colorTitle = NULL;
+  f->colorArtist = NULL;
   f->titleRotationHandler = NULL;
   f->fileTitle[0] = '\0';
   return f;
@@ -412,6 +414,11 @@ Bool feInit(myFrontend *f) {
   if (!f->colorPlayed) f->colorPlayed = WMCreateRGBColor(f->scr, 240<<8, 220<<8, 220<<8, False);
   f->colorWindowBack = WMGetUDColorForKey(f->settings, "colorWindowBackground", f->scr);
   if (!f->colorWindowBack) f->colorWindowBack = WMGrayColor(f->scr);
+  
+  if ((f->colorTitle = WMGetUDColorForKey(f->settings, "colorTitle", f->scr)) == NULL)
+    f->colorTitle = WMCreateRGBColor(f->scr, 128<<8, 0, 0, False);
+  if ((f->colorArtist = WMGetUDColorForKey(f->settings, "colorArtist", f->scr)) == NULL)
+    f->colorArtist = WMCreateRGBColor(f->scr, 64<<8, 0, 0, False);
 
   char *str;
   if ((str = WMGetUDStringForKey(f->settings, "colorBaseBackground")) && getColorStringRed(str) > -1) {
@@ -461,14 +468,12 @@ Bool feInit(myFrontend *f) {
   f->songtitle = WMCreateLabel(f->win);
   //WMSetLabelText(f->songtitle, "no file loaded.");
   WMSetLabelTextAlignment(f->songtitle, WARight);
-  WMSetLabelTextColor(f->songtitle, WMCreateRGBColor(f->scr, 128<<8, 0, 0, False));
+  WMSetLabelTextColor(f->songtitle, f->colorTitle);
   WMSetLabelFont(f->songtitle, WMSystemFontOfSize(f->scr, 18));
 
   f->songartist = WMCreateLabel(f->win);
-  //WMSetLabelText(f->songartist, APP_LONG);
   WMSetLabelTextAlignment(f->songartist, WARight);
-  /*WMSetWidgetBackgroundColor(songartist, WMCreateRGBColor(scr, 222<<8, 0, 0, False));*/
-  WMSetLabelTextColor(f->songartist, WMCreateRGBColor(f->scr, 64<<8, 0, 0, False));
+  WMSetLabelTextColor(f->songartist, f->colorArtist);
 
   f->songtime = WMCreateLabel(f->win);
   WMSetLabelText(f->songtime, NULL);
