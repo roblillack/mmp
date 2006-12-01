@@ -163,9 +163,38 @@ void feRemoveBackend(myFrontend *f, Backend *b) {
   }
 }
 
+const char* ensure_utf8(const char *text) {
+  static char buf[1024];
+  // check validity of utf8
+#define range(x,y) (unsigned char)text[i] >= x && (unsigned char)text[i] <= y
+#define seq(x) i+x < len && o+x < sizeof(buf) && (unsigned char)text[i+x] > 127 && (unsigned char)text[i+x] < 192
+#define cpy(x) for (count=x; count>0; count--) buf[o++] = text[i++];
+  unsigned int i = 0;
+  unsigned int o = 0;
+  unsigned char count = 0;
+  unsigned int len = strlen(text);
+  for (;;) {
+    if (o == sizeof(buf) || i >= strlen(text)) break;
+    if (text[i] == '\0') { o++; break; }
+    else if (range(1, 127)) { cpy(1); }
+    else if (range(192, 223) && seq(1)) { cpy(2); }
+    else if (range(224, 239) && seq(1) && seq(2)) { cpy(3); }
+    else if (range(240, 247) && seq(2) && seq(2) && seq(3)) { cpy(4); }
+    // we adhere to RFC 3629 and allow max 4 byte sequences
+    // the rest is assumed to be iso-8859-1
+    else if (o+1 < sizeof(buf)) {
+      u_int16_t c = (unsigned char)text[i++];
+      buf[o++] = (c>>6) | 0xc0;
+      buf[o++] = (c & 0x3f) | 0x80;
+    }
+  }
+  buf[o] = '\0';
+  return buf;
+}
+
 void feSetArtist(myFrontend *f, char *text) {
   FB("feSetArtist");
-  WMSetLabelText(f->songartist, text);
+  WMSetLabelText(f->songartist, (char*)ensure_utf8(text));
   FE("feSetArtist");
 }
 
@@ -585,6 +614,10 @@ void feShowDir(myFrontend *f, char *dirname) {
   char buf[MAXPATHLEN];
   WMListItem *item = NULL;
 
+  WMArrayIterator i;
+  WM_ITERATE_ARRAY(WMGetListItems(f->datalist), item, i) {
+    ucfree(item->clientData);
+  }
   WMClearList(f->datalist);
   f->playingSongItem = NULL;
 
@@ -633,7 +666,8 @@ void feShowDir(myFrontend *f, char *dirname) {
           continue;
       	}
       }
-      item = WMAddListItem(f->datalist, entry->d_name);
+      item = WMAddListItem(f->datalist, (char *)ensure_utf8(entry->d_name));
+      item->clientData = (void*)wstrdup(entry->d_name);
       item->uflags = flags;
       if (f->playingSongFile && f->playingSongDir &&
           !strcmp(f->playingSongFile, entry->d_name) &&
@@ -663,6 +697,8 @@ void cbDoubleClick(WMWidget *self, void *data) {
   /* selected entry is a dir? */
   if (WMGetListSelectedItem(f->datalist)->uflags & IsDirectory) {
     snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
+             WMGetListSelectedItem(f->datalist)->clientData ?
+             WMGetListSelectedItem(f->datalist)->clientData :
              WMGetListSelectedItem(f->datalist)->text);
     feShowDir(f, buf);
     return;
@@ -702,7 +738,7 @@ void cbPlaySong(WMWidget *self, void *data) {
   WMSetLabelText(f->songartist, "no artist or codec information.");
 
   snprintf(buf, sizeof(buf), "%s/%s", f->currentdir,
-           WMGetListSelectedItem(f->datalist)->text);
+           WMGetListSelectedItem(f->datalist)->clientData);
   (*b->play)(buf);
 
   ucfree(f->playingSongDir);
@@ -800,7 +836,7 @@ void feMarkFile(myFrontend *f, char *name) {
   WMListItem *item;
   int row = WANotFound;
   WM_ITERATE_ARRAY (WMGetListItems(f->datalist), item, i) {
-    if (strncmp(name, item->text, strlen(name)) == 0) {
+    if (strncmp(name, item->clientData, strlen(name)) == 0) {
       row = (int)i;
       break;
     }
@@ -929,7 +965,7 @@ void setDirLabel(myFrontend *f, const char *text) {
 
   if (!f || !text) return;
 
-  strncpy(buf, text, sizeof(buf)-1);
+  strncpy(buf, ensure_utf8(text), sizeof(buf)-1);
   buf[sizeof(buf)-1] = '\0';
 
   for (dirp = buf; dirp != '\0'; dirp++) {
@@ -992,7 +1028,7 @@ WMData* FetchDragData(WMView *view, char *type) {
   if (strncmp(type, "text/uri-list", 13) == 0) {
     gethostname(hostname, 255);
     hostname[256] = '\0';
-    filename = WMGetListSelectedItem(f->datalist)->text;
+    filename = WMGetListSelectedItem(f->datalist)->clientData;
     if (strncmp(filename, " > ", 3) == 0) filename += 3;
     snprintf(buf, 1024, "file://%s%s/%s",
              hostname, f->currentdir, filename);
