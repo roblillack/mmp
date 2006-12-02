@@ -269,20 +269,24 @@ void mplayer_cleanup() {
 }
 
 WMArray* mplayer_getSupportedExtensions() {
-  WMArray* types = WMCreateArray(13);
-  WMAddToArray(types, "mp3");
-  WMAddToArray(types, "ogg");
-  WMAddToArray(types, "flac");
-  WMAddToArray(types, "aac");
-  WMAddToArray(types, "m4a");
-  WMAddToArray(types, "wma");
-  WMAddToArray(types, "avi");
-  WMAddToArray(types, "mpg");
-  WMAddToArray(types, "flv");
-  WMAddToArray(types, "wmv");
-  WMAddToArray(types, "mov");
-  WMAddToArray(types, "mpeg");
+  WMArray* types = WMCreateArray(17);
   WMAddToArray(types, "3gp");
+  WMAddToArray(types, "aac");
+  WMAddToArray(types, "aiff");
+  WMAddToArray(types, "avi");
+  WMAddToArray(types, "flac");
+  WMAddToArray(types, "flv");
+  WMAddToArray(types, "m4a");
+  WMAddToArray(types, "m4v");
+  WMAddToArray(types, "mov");
+  WMAddToArray(types, "mp3");
+  WMAddToArray(types, "mpeg");
+  WMAddToArray(types, "mpg");
+  WMAddToArray(types, "ogg");
+  WMAddToArray(types, "ogm");
+  WMAddToArray(types, "wav");
+  WMAddToArray(types, "wma");
+  WMAddToArray(types, "wmv");
   return types;
 }
 
