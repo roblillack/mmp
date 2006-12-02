@@ -841,7 +841,7 @@ void feMarkFile(myFrontend *f, char *name) {
   WMListItem *item;
   int row = WANotFound;
   WM_ITERATE_ARRAY (WMGetListItems(f->datalist), item, i) {
-    if (strncmp(name, item->clientData, strlen(name)) == 0) {
+    if (strncmp(name, item->clientData ? item->clientData : item->text, strlen(name)) == 0) {
       row = (int)i;
       break;
     }
