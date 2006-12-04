@@ -847,12 +847,25 @@ void feFindCover(myFrontend *f) {
     if ((orig = RLoadImage(WMScreenRContext(f->scr), buf, 0)) == NULL) return;
   }
   D2("pic found: %s\n", buf);
-  RImage *scaled = RSmoothScaleImage(orig, 50, 50);
+  int h, w;
+  if (orig->height > orig->width) {
+    h = 50;
+    w = orig->width * 50 / orig->height;
+    if (w < 1) w = 1;
+  } else {
+    w = 50;
+    h = orig->height * 50 / orig->width;
+    if (h < 1) h = 1;
+  }
+  RImage *scaled = RSmoothScaleImage(orig, w, h);
+  RColor back = WMGetRColorFromColor(f->colorWindowBack);
+  RImage *final = RMakeCenteredImage(scaled, 50, 50, &back);
   // TODO: treshold?
-  WMPixmap *pix = WMCreatePixmapFromRImage(f->scr, scaled, 127);
+  WMPixmap *pix = WMCreateBlendedPixmapFromRImage(f->scr, final, &back);
   WMSetLabelImage(f->coverImage, pix);
   f->haveCover = True;
   WMReleasePixmap(pix);
+  RReleaseImage(final);
   RReleaseImage(scaled);
   RReleaseImage(orig);
   cbSizeChanged(f, NULL);
