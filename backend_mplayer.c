@@ -370,87 +370,76 @@ void mplayer_send_cmd(const char *cmd) {
 
 void mplayer_handle_input(int fd, int mask, void *clientData) {
   //FB("handlePlayerInput");
-#define BUFSIZE 8192
-
-  char bigbuf[BUFSIZE];   // the whole buffer
-  char *buf;              // pointer the line we work with
-  char *laststop = NULL;
-  char *start;
-  int len;
-
   if (mplayer_backend.childPid == 0) {
     D1("no child alive in handlePlayerInput.\n");
     return;
   }
 
-  len = read(mplayer_backend.pipeFromPlayer[0], bigbuf, BUFSIZE-1);
-  // drop last (incomplete) line, if buffer full
-  if (len == BUFSIZE-1 && bigbuf[BUFSIZE-1] != '\n') {
-    char *i;
-    for (i = &bigbuf[BUFSIZE-2]; i > bigbuf; i--) {
-      if (*i == '\n') {
-        *i = '\0';
-        break;
-      }
+  char buf[1024];
+  unsigned int pos;
+  for (pos = 0; pos < sizeof(buf)-1; pos++) {
+    if (read(mplayer_backend.pipeFromPlayer[0], buf + pos, 1) != 1) {
+      D1("error reading from pipe.\n");
+      return;
     }
-  } else {
-    bigbuf[len] = '\0';
+    // 0x15 == ctrl-u
+    if (buf[pos] == '\n' || buf[pos] == '\r') break;
+    if (pos >= sizeof(buf) - 2)  {
+      pos = sizeof(buf) - 3;
+      D3("BUFFER (%u) TOO SMALL (pos: %u) -------\n", sizeof(buf), pos);
+    }
   }
-  
-  //printf("read %d bytes. bigbuf: %s\n", len, bigbuf);
-  for (buf = strtok_r(bigbuf, "\n", &laststop); buf;
-       buf = strtok_r(NULL, "\n", &laststop)) {
-    //printf("buf: %s\n", buf);
+  buf[pos] = '\0';
 
-    if (strncmp(buf, "A:", 2) == 0 || strncmp(buf, "V:", 2) == 0) {
-      if (!mplayer_backend.playing_began) {
-        mplayer_show_codec_info();
-        mplayer_backend.playing_began = True;
-      }
-      start = mplayer_find_next_number(buf+2, 0);
-      if (start) {
-        feSetCurrentPosition(mplayer_backend.frontend, strtol(start, NULL, 10));
-      }
-    /*} else if (strncmp(buf, "VIDEO: ", 7) == 0 || strncmp(buf, "AUDIO: ", 7) == 0) {
-      feSetArtist(mplayer_backend.frontend, buf+8);*/
-    } else if (strncmp(buf, "ID_", 3) == 0) {
-      if (strncmp(buf+3, "LENGTH=", 7) == 0) {
-        start = mplayer_find_next_number(buf+3, 0);
-        feSetFileLength(mplayer_backend.frontend, strtol(start, NULL, 10));
-      } else if (strncmp(buf+3, "CLIP_INFO", 9) == 0) {
-        if (strncmp(buf+12, "_NAME", 5) == 0) {
-          start = mplayer_find_next_number(buf+17, 0);
-          if (!start) continue;
-          int index = (int) strtol(start, &start, 10);
-          if (*start != '=') continue;
-          //printf("adding %s\n", start+1);
-          start = WMReplaceInArray(mplayer_backend.clipInfo, index, wstrdup(start+1));
-          ucfree(start);
-        } else if (strncmp(buf+12, "_VALUE", 6) == 0) {
-          start = mplayer_find_next_number(buf+18, 0);
-          if (!start) continue;
-          int index = (int) strtol(start, &start, 10);
-          if (*start != '=' || strlen(start+1) == 0) continue;
-          //printf("getting %i: %s\n", index, start+1);
-          if (strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Artist", 6) == 0) {
-            feSetArtist(mplayer_backend.frontend, start+1);
-            mplayer_backend.found_artist = True;
-          } else if (strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Title", 5) == 0 ||
-                     strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Name", 4) == 0) {
-            feSetTitle(mplayer_backend.frontend, start+1);
-          }
+  //printf("buf: %s\n", buf);
+
+  char *start;
+  if (strncmp(buf, "A:", 2) == 0 || strncmp(buf, "V:", 2) == 0) {
+    if (!mplayer_backend.playing_began) {
+      mplayer_show_codec_info();
+      mplayer_backend.playing_began = True;
+    }
+    start = mplayer_find_next_number(buf+2, 0);
+    if (start) {
+      feSetCurrentPosition(mplayer_backend.frontend, strtol(start, NULL, 10));
+    }
+  } else if (strncmp(buf, "ID_", 3) == 0) {
+    if (strncmp(buf+3, "LENGTH=", 7) == 0) {
+      start = mplayer_find_next_number(buf+3, 0);
+      feSetFileLength(mplayer_backend.frontend, strtol(start, NULL, 10));
+    } else if (strncmp(buf+3, "CLIP_INFO", 9) == 0) {
+      if (strncmp(buf+12, "_NAME", 5) == 0) {
+        start = mplayer_find_next_number(buf+17, 0);
+        if (!start) return;
+        int index = (int) strtol(start, &start, 10);
+        if (*start != '=') return;
+      //printf("adding %s\n", start+1);
+        start = WMReplaceInArray(mplayer_backend.clipInfo, index, wstrdup(start+1));
+        ucfree(start);
+      } else if (strncmp(buf+12, "_VALUE", 6) == 0) {
+        start = mplayer_find_next_number(buf+18, 0);
+        if (!start) return;
+        int index = (int) strtol(start, &start, 10);
+        if (*start != '=' || strlen(start+1) == 0) return;
+        //printf("getting %i: %s\n", index, start+1);
+        if (strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Artist", 6) == 0) {
+          feSetArtist(mplayer_backend.frontend, start+1);
+          mplayer_backend.found_artist = True;
+        } else if (strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Title", 5) == 0 ||
+            strncmp(WMGetFromArray(mplayer_backend.clipInfo, index), "Name", 4) == 0) {
+          feSetTitle(mplayer_backend.frontend, start+1);
         }
-      } else if (strncmp(buf+3, "VIDEO_FORMAT=", 13) == 0) {
-        strncpy(mplayer_backend.codec_video, buf+16, sizeof(mplayer_backend.codec_video));
-      } else if (strncmp(buf+3, "AUDIO_FORMAT=", 13) == 0) {
-        strncpy(mplayer_backend.codec_audio, buf+16, sizeof(mplayer_backend.codec_audio));
-      } else if (strncmp(buf+3, "VIDEO_BITRATE=", 14) == 0) {
-        start = mplayer_find_next_number(buf+17, 0);
-        if (start) mplayer_backend.bitrate_video = strtol(start, NULL, 10);
-      } else if (strncmp(buf+3, "AUDIO_BITRATE=", 14) == 0) {
-        start = mplayer_find_next_number(buf+17, 0);
-        if (start) mplayer_backend.bitrate_audio = strtol(start, NULL, 10);
       }
+    } else if (strncmp(buf+3, "VIDEO_FORMAT=", 13) == 0) {
+      strncpy(mplayer_backend.codec_video, buf+16, sizeof(mplayer_backend.codec_video));
+    } else if (strncmp(buf+3, "AUDIO_FORMAT=", 13) == 0) {
+      strncpy(mplayer_backend.codec_audio, buf+16, sizeof(mplayer_backend.codec_audio));
+    } else if (strncmp(buf+3, "VIDEO_BITRATE=", 14) == 0) {
+      start = mplayer_find_next_number(buf+17, 0);
+      if (start) mplayer_backend.bitrate_video = strtol(start, NULL, 10);
+    } else if (strncmp(buf+3, "AUDIO_BITRATE=", 14) == 0) {
+      start = mplayer_find_next_number(buf+17, 0);
+      if (start) mplayer_backend.bitrate_audio = strtol(start, NULL, 10);
     }
   }
 }
