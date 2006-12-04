@@ -23,7 +23,7 @@ CFLAGS = $(OPT) $(DEBUG) $(addprefix -DHAVE_BACKEND_, $(BACKENDS)) $(WINGS_CFLAG
 
 PROGRAM = mmp
 
-OBJECTS = mmp.o WMAddOns.o frontend.o $(addprefix backend_, $(addsuffix .o, $(BACKENDS)))
+OBJECTS = mmp.o WMAddOns.o frontend.o $(addprefix backend_, $(addsuffix .o, $(BACKENDS))) md5.o
 
 .SUFFIXES:	.o .c
 

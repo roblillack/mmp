@@ -1,4 +1,5 @@
 #include "mmp.h"
+#include "md5.h"
 
 #include <assert.h>
 #include <dirent.h>
@@ -163,6 +164,42 @@ void feRemoveBackend(myFrontend *f, Backend *b) {
   if ((index = WMFindInArray(f->backends, NULL, b)) != WANotFound) {
     WMDeleteFromArray(f->backends, index);
   }
+}
+
+const char* file2url(const char *text) {
+  static char buf[1024];
+  const char *allowed = "abcdefghijklmnopqrstuvwxyz" // lowalpha
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" // upalpha (+ lowalpha = alpha)
+                        "0123456789"                 // digit (+ alpha = alphanum)
+                        "-_.!~*'()"                  // mark (+ alphanum = unreserved)
+                        "/";                         // path
+  const char *hexchars = "0123456789ABCDEF";
+  unsigned int i = 0;
+  strncpy(buf, "file://", 7);
+  unsigned int o = 7;
+  const unsigned int len = strlen(text);
+  const unsigned int allowedlen = strlen(allowed);
+  char c = 0;
+  for (;;) {
+    if (o == sizeof(buf) || i >= strlen(text)) break;
+    if (text[i] == '\0') { o++; break; }
+    for (c = 0; c < allowedlen; c++) {
+      if (text[i] == allowed[c]) {
+        c = -1;
+        break;
+      }
+    }
+    if (c == -1) {
+      buf[o++] = text[i++];
+    } else {
+      buf[o++] = '%';
+      buf[o++] = *(hexchars + (unsigned char)text[i] / 16);
+      buf[o++] = *(hexchars + (unsigned char)text[i] % 16);
+      i++;
+    }
+  }
+  buf[o] = '\0';
+  return buf;
 }
 
 const char* ensure_utf8(const char *text) {
@@ -786,7 +823,29 @@ void feFindCover(myFrontend *f) {
     if ((orig = RLoadImage(WMScreenRContext(f->scr), buf, 0)) != NULL)
       break;
   }
-  if (orig == NULL) return;
+
+  if (orig == NULL) {
+    // try to find thumbnail
+    char url[MAXPATHLEN + 7];
+    char digest[17];
+    md5_state_t state;
+    md5_init(&state);
+    snprintf(url, sizeof(url), "%s/%s", f->playingSongDir, f->playingSongFile);
+    const char *url_encoded = file2url(url);
+    md5_append(&state, url_encoded, strlen(url_encoded));
+    md5_finish(&state, digest);
+    digest[16] = '\0';
+    snprintf(buf, sizeof(buf), "%s/.thumbnails/normal/%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx.png", getenv("HOME"),
+             digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+             digest[8], digest[9], digest[10], digest[11], digest[12], digest[13], digest[14], digest[15]);
+    D2("URL: %s\n", url_encoded);
+    D2("THUMB? %s\n", buf);
+    struct stat bla;
+    if (stat(buf, &bla) == 0) {
+      D1("stat successful\n");
+    }
+    if ((orig = RLoadImage(WMScreenRContext(f->scr), buf, 0)) == NULL) return;
+  }
   D2("pic found: %s\n", buf);
   RImage *scaled = RSmoothScaleImage(orig, 50, 50);
   // TODO: treshold?
