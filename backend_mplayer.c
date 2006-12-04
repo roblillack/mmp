@@ -254,6 +254,21 @@ void mplayer_cb_stopped(void *cdata) {
   FE("cbStopped");
 }
 
+Bool mplayer_wait_for_exit(int secs) {
+  int status;
+  struct timespec ts;
+  ts.tv_sec = 0;
+  ts.tv_nsec = secs * 10000;
+  int count = 10;
+  do {
+    D2("waiting (count: %i)\n", count);
+    wait(&status);
+    nanosleep(&ts);
+    ts.tv_nsec += secs * 100;
+  } while (!WIFEXITED(status) && !WIFSIGNALED(status) && count-- > 0);
+  return (WIFEXITED(status) || !WIFSIGNALED(status) ? True : False);
+}
+
 void mplayer_stop() {
   FB("beStop");
   if (mplayer_backend.childPid) {
@@ -266,16 +281,19 @@ void mplayer_stop() {
 void mplayer_stopNow() {
   FB("beStopNow");
   if (mplayer_backend.childPid) {
-    kill(mplayer_backend.childPid, SIGINT);
-    int status;
-    int i = 0;
-    do {
-      wait(&status);
-      if (i == 100) kill(mplayer_backend.childPid, SIGTERM);
-      if (i == 200) kill(mplayer_backend.childPid, SIGKILL);
-      D1("waiting...\n");
-      i++;
-    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+    mplayer_send_cmd("quit");
+    if (!mplayer_wait_for_exit(1)) {
+      kill(mplayer_backend.childPid, SIGINT);
+      if (!mplayer_wait_for_exit(1)) {
+        kill(mplayer_backend.childPid, SIGTERM);
+        if (!mplayer_wait_for_exit(1)) {
+          kill(mplayer_backend.childPid, SIGKILL);
+          if (!mplayer_wait_for_exit(3)) {
+            D2("unable to kill child: %i.\n", mplayer_backend.childPid);
+          }
+        }
+      }
+    }
     mplayer_cleanup();
   }
   FE("beStopNow");
