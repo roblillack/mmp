@@ -614,10 +614,43 @@ Bool feInit(myFrontend *f) {
   WMAddNotificationObserver(cbSizeChanged, f,
                             WMViewSizeDidChangeNotification, WMWidgetView(f->win));
 
+  WMCreateEventHandler(WMWidgetView(f->win), KeyPressMask | KeyReleaseMask, cbKeyPress, f);
   WMRealizeWidget(f->win);
   WMMapSubwidgets(f->win);
   WMMapWidget(f->win);
 
+}
+
+void cbKeyPress(XEvent *event, void *data) {
+  myFrontend *f = (myFrontend*) data;
+
+  if (event->type == KeyRelease) {
+    KeySym symbol = XKeycodeToKeysym(f->dpy, event->xkey.keycode, 0);
+    switch (symbol) {
+      case ' ':
+        if (f->activeBackend && f->activeBackend->pause)
+          (*f->activeBackend->pause)();
+        break;
+
+      case 'f':
+      case 'F':
+        if (f->activeBackend && f->activeBackend->switchFullscreen)
+            (*f->activeBackend->switchFullscreen)();
+        break;
+
+      case XK_Return:
+      case XK_KP_Enter:
+        break;
+
+      case XK_Escape:
+        if (f->activeBackend && f->activeBackend->stopNow)
+          (*f->activeBackend->stopNow)();
+        break;
+
+      default:
+        break;
+    }
+  }
 }
 
 void feRun(myFrontend *f) {

@@ -22,6 +22,10 @@ typedef struct mpg123Backend {
       Bool (*IsPlaying)             ();
       void (*Play)                  (const char*);
       void (*StopNow)               ();
+      void (*switchFullscreen)       ();
+      void (*pause)                  ();
+      void (*seekForward)            ();
+      void (*seekBackward)           ();
   // private
   Frontend *frontend;
   int pipeToPlayer[2], pipeFromPlayer[2];
@@ -52,6 +56,10 @@ mpg123Backend *mpg123_create(Frontend *f) {
   mpg123_backend.IsPlaying = mpg123_isPlaying;
   mpg123_backend.Play = mpg123_play;
   mpg123_backend.StopNow = mpg123_stopNow;
+  mpg123_backend.switchFullscreen = NULL;
+  mpg123_backend.pause = NULL;
+  mpg123_backend.seekForward = NULL;
+  mpg123_backend.seekBackward = NULL;
 
   mpg123_backend.frontend = f;
   mpg123_init();

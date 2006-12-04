@@ -40,6 +40,10 @@ struct Backend_T {
   Bool (*isPlaying)();
   void (*play)(const char*);
   void (*stopNow)();
+  void (*switchFullscreen)       ();
+  void (*pause)                  ();
+  void (*seekForward)            ();
+  void (*seekBackward)           ();
 };
 
 Frontend* feCreate();

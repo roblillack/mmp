@@ -17,11 +17,15 @@
 
 typedef struct mplayerBackend {
   // public
-  WMArray* (*GetSupportedExtensions)();
-      void (*Init)                  ();
-      Bool (*IsPlaying)             ();
-      void (*Play)                  (const char*);
-      void (*StopNow)               ();
+  WMArray* (*GetSupportedExtensions) ();
+      void (*Init)                   ();
+      Bool (*IsPlaying)              ();
+      void (*Play)                   (const char*);
+      void (*StopNow)                ();
+      void (*switchFullscreen)       ();
+      void (*pause)                  ();
+      void (*seekForward)            ();
+      void (*seekBackward)           ();
   // private
   Frontend *frontend;
   int pipeToPlayer[2], pipeFromPlayer[2];
@@ -43,6 +47,8 @@ void mplayer_init();
 Bool mplayer_isPlaying();
 void mplayer_play(const char*);
 void mplayer_stopNow();
+void mplayer_switch_fullscreen();
+void mplayer_pause();
 
 void mplayer_stop();
 void mplayer_cb_stopped(void*);
@@ -52,6 +58,7 @@ void mplayer_handle_input(int, int, void*);
 char* mplayer_find_next_number(char*, unsigned int);
 
 static mplayerBackend mplayer_backend;
+void mplayer_send_cmd(const char *);
 // -----------------------------------------------------------------------------
 
 mplayerBackend *mplayer_create(Frontend *f) {
@@ -60,7 +67,11 @@ mplayerBackend *mplayer_create(Frontend *f) {
   mplayer_backend.IsPlaying = mplayer_isPlaying;
   mplayer_backend.Play = mplayer_play;
   mplayer_backend.StopNow = mplayer_stopNow;
-
+  mplayer_backend.switchFullscreen = mplayer_switch_fullscreen;
+  mplayer_backend.pause = mplayer_pause;
+  mplayer_backend.seekForward = NULL;
+  mplayer_backend.seekBackward = NULL;
+ 
   mplayer_backend.frontend = f;
   mplayer_backend.clipInfo = NULL;
   mplayer_init();
@@ -121,7 +132,7 @@ void mplayer_play(const char *filename) {
     dup(mplayer_backend.pipeToPlayer[0]);
     close(mplayer_backend.pipeToPlayer[0]);
     close(mplayer_backend.pipeToPlayer[1]);
-    execlp("mplayer", "mplayer", "-framedrop", "-identify", filename, NULL);
+    execlp("mplayer", "mplayer", "-slave", "-framedrop", "-identify", filename, NULL);
     perror("[mmp] error running mplayer\n");
     return;
   } else if (mplayer_backend.childPid == -1) {
@@ -136,6 +147,18 @@ void mplayer_play(const char *filename) {
   close(mplayer_backend.pipeToPlayer[0]);
 
   FE("bePlay");
+}
+
+void mplayer_pause() {
+  if (mplayer_backend.childPid > 0) {
+    mplayer_send_cmd("pause");
+  }
+}
+
+void mplayer_switch_fullscreen() {
+  if (mplayer_backend.childPid > 0) {
+    mplayer_send_cmd("vo_fullscreen 1");
+  }
 }
 
 void mplayer_show_codec_info() {
@@ -317,6 +340,14 @@ char *mplayer_find_next_number(char *text, unsigned int ignore) {
   }
 
   return NULL;
+}
+
+void mplayer_send_cmd(const char *cmd) {
+  char buf[256];
+  if (mplayer_backend.childPid) {
+    write(mplayer_backend.pipeToPlayer[1], cmd, strlen(cmd));
+    write(mplayer_backend.pipeToPlayer[1], "\n", 1);
+  }
 }
 
 void mplayer_handle_input(int fd, int mask, void *clientData) {
