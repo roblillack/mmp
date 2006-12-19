@@ -68,7 +68,13 @@ typedef struct Frontend {
   WMLabel *songtitle,
           *songartist,
           *songtime,
-          *dirlabel;
+          *dirlabel,
+          *dl_outer_top,
+          *dl_inner_top,
+          *dl_outer_left,
+          *dl_inner_left,
+          *dl_outer_right,
+          *dl_inner_right;
   WMLabel *progressLabel;
   WMList *datalist;
 
@@ -563,11 +569,6 @@ Bool feInit(myFrontend *f) {
   WMSetButtonAction(f->sizebutton, cbChangeSize, f);
   //WMSetBalloonTextForView("show/hide the song list.", WMWidgetView(f->sizebutton));
   
-  f->dirlabel = WMCreateLabel(f->win);
-  WMSetLabelText(f->dirlabel, NULL);
-  WMSetLabelTextAlignment(f->dirlabel, WALeft);
-  WMSetLabelTextColor(f->dirlabel, WMDarkGrayColor(f->scr));
-
   f->datalist = WMCreateList(f->win);
   WMHangData(f->datalist, (void*)f);
   WMSetListAllowMultipleSelection(f->datalist, 0);
@@ -575,8 +576,30 @@ Bool feInit(myFrontend *f) {
   WMSetListDoubleAction(f->datalist, cbDoubleClick, f);
   WMSetListUserDrawProc(f->datalist, DrawListItem);
   
+  f->dirlabel = WMCreateLabel(f->win);
+  WMSetLabelText(f->dirlabel, NULL);
+  WMSetLabelTextAlignment(f->dirlabel, WALeft);
+  WMSetWidgetBackgroundColor(f->dirlabel, f->colorListBack);
+  WMSetLabelTextColor(f->dirlabel, WMDarkGrayColor(f->scr));
+  //WMSetWidgetBackgroundColor(f->dirlabel, WMGrayColor(f->scr));
+  //WMSetLabelTextColor(f->dirlabel, WMWhiteColor(f->scr));
+  //WMSetLabelRelief(f->dirlabel, WRRaised);
+
+  f->dl_outer_top = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_outer_top, WMDarkGrayColor(f->scr));
+  f->dl_inner_top = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_inner_top, WMBlackColor(f->scr));
+  f->dl_outer_left = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_outer_left, WMDarkGrayColor(f->scr));
+  f->dl_inner_left = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_inner_left, WMBlackColor(f->scr));
+  f->dl_outer_right = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_outer_right, WMWhiteColor(f->scr));
+  f->dl_inner_right = WMCreateLabel(f->win);
+  WMSetWidgetBackgroundColor(f->dl_inner_right, WMGrayColor(f->scr));
+
   WMSetWidgetBackgroundColor(f->datalist, f->colorListBack);
-  WMSetWidgetBackgroundColor(f->dirlabel, f->colorWindowBack);
+  //WMSetWidgetBackgroundColor(f->dirlabel, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->nextsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->playsongbutton, f->colorWindowBack);
   WMSetWidgetBackgroundColor(f->prevsongbutton, f->colorWindowBack);
@@ -1057,11 +1080,27 @@ void cbSizeChanged(void *self, WMNotification *notif) {
   WMResizeWidget(f->sizebutton, 30, 14);
   WMMoveWidget(f->sizebutton, 7, 57);
 
-  WMMoveWidget(f->dirlabel, 7, WinHeightIfSmall+1);
-  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+15);
+  WMMoveWidget(f->dirlabel, 9, WinHeightIfSmall+2);
+  WMMoveWidget(f->datalist, 7, WinHeightIfSmall+16);
   if (f->bigsize) {
-    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall-15);
-    WMResizeWidget(f->dirlabel, w - 14, 14);
+    WMResizeWidget(f->datalist, w - 14, h - WinHeightIfSmall - 15);
+    WMResizeWidget(f->dirlabel, w - 18, 15);
+
+    WMResizeWidget(f->dl_outer_top, w - 14, 1);
+    WMMoveWidget(f->dl_outer_top, 7, WinHeightIfSmall);
+    WMResizeWidget(f->dl_inner_top, w - 15, 1);
+    WMMoveWidget(f->dl_inner_top, 8, WinHeightIfSmall+1);
+
+    WMResizeWidget(f->dl_outer_left, 1, 15);
+    WMMoveWidget(f->dl_outer_left, 7, WinHeightIfSmall+1);
+    WMResizeWidget(f->dl_inner_left, 1, 15);
+    WMMoveWidget(f->dl_inner_left, 8, WinHeightIfSmall+2);
+
+    WMResizeWidget(f->dl_outer_right, 1, 16);
+    WMMoveWidget(f->dl_outer_right, w-8, WinHeightIfSmall);
+    WMResizeWidget(f->dl_inner_right, 1, 16);
+    WMMoveWidget(f->dl_inner_right, w-9, WinHeightIfSmall+1);
+
     setDirLabel(f, f->currentdir);
   }
 
