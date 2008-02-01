@@ -2,6 +2,11 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#ifdef DEBUG
+int depth = 0;
+int depthc = 0;
+#endif
+
 #ifdef HAVE_BACKEND_MPLAYER
 Backend* mplayer_create(Frontend*);
 #endif

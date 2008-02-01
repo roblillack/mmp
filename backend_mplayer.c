@@ -121,6 +121,7 @@ void mplayer_play(const char *filename) {
   /* now, start the new process */
   mplayer_backend.childPid = fork();
   if (mplayer_backend.childPid == 0) {
+    D1("child here.");
     /* redirect stdout to pipeFromPlayer */
     close(1);
     dup(mplayer_backend.pipeFromPlayer[1]);
@@ -132,11 +133,11 @@ void mplayer_play(const char *filename) {
     dup(mplayer_backend.pipeToPlayer[0]);
     close(mplayer_backend.pipeToPlayer[0]);
     close(mplayer_backend.pipeToPlayer[1]);
-    execlp("mplayer", "mplayer", "-slave", "-framedrop", "-identify", filename, NULL);
-    perror("[mmp] error running mplayer\n");
+    execlp("/home/rob/Projects/mmp/mplayerwrapper.sh", "mplayerwrapper.sh", "-slave", "-framedrop", "-identify", filename, (char*) NULL);
+    D1("wrapper exited.");
     return;
   } else if (mplayer_backend.childPid == -1) {
-    printf("[mmp] error. could not fork....\n");
+    D1("i have trouble forking");
     mplayer_backend.childPid = 0;
     close(mplayer_backend.pipeFromPlayer[0]);
     close(mplayer_backend.pipeToPlayer[1]);
@@ -248,8 +249,11 @@ void mplayer_show_codec_info() {
 void mplayer_cb_stopped(void *cdata) {
   FB("cbStopped");
   if (mplayer_backend.childPid) {
+    D1("have child..");
     mplayer_cleanup();
     WMAddIdleHandler(fePlayingStopped, mplayer_backend.frontend);
+  } else {
+    D1("WARNING: no child pid. handler will stay!");
   }
   FE("cbStopped");
 }
@@ -263,7 +267,7 @@ Bool mplayer_wait_for_exit(int secs) {
   do {
     D2("waiting (count: %i)\n", count);
     wait(&status);
-    nanosleep(&ts);
+    nanosleep(&ts, NULL);
     ts.tv_nsec += secs * 100;
   } while (!WIFEXITED(status) && !WIFSIGNALED(status) && count-- > 0);
   return (WIFEXITED(status) || !WIFSIGNALED(status) ? True : False);
@@ -271,6 +275,7 @@ Bool mplayer_wait_for_exit(int secs) {
 
 void mplayer_stop() {
   FB("beStop");
+  D1("WARNING: don't use stop....");
   if (mplayer_backend.childPid) {
     D1("sending SIGINT...\n");
     kill(mplayer_backend.childPid, SIGINT);
@@ -281,12 +286,17 @@ void mplayer_stop() {
 void mplayer_stopNow() {
   FB("beStopNow");
   if (mplayer_backend.childPid) {
+    D1("have child pid");
     mplayer_send_cmd("quit");
+    D1("sent quit msg.");
     if (!mplayer_wait_for_exit(1)) {
+      D1("sending SIGINT");
       kill(mplayer_backend.childPid, SIGINT);
       if (!mplayer_wait_for_exit(1)) {
+        D1("sending SIGTERM");
         kill(mplayer_backend.childPid, SIGTERM);
         if (!mplayer_wait_for_exit(1)) {
+          D1("sending SIGKILL");
           kill(mplayer_backend.childPid, SIGKILL);
           if (!mplayer_wait_for_exit(3)) {
             D2("unable to kill child: %i.\n", mplayer_backend.childPid);
@@ -391,7 +401,7 @@ void mplayer_handle_input(int fd, int mask, void *clientData) {
   }
   buf[pos] = '\0';
 
-  //printf("buf: %s\n", buf);
+  printf("buf: %s\n", buf);
 
   char *start;
   if (strncmp(buf, "A:", 2) == 0 || strncmp(buf, "V:", 2) == 0) {

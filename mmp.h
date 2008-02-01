@@ -11,18 +11,20 @@
 #ifdef DEBUG
 #include <stdlib.h>
 #include <stdio.h>
-#define D1(x)    	fprintf(stderr, "* "__FILE__" %i: "x, __LINE__)
-#define D2(x,y)		fprintf(stderr, "* "__FILE__" %i: "x, __LINE__, y)
-#define D3(x,y,z)	fprintf(stderr, "* "__FILE__" %i: "x, __LINE__, y, z)
-
-static int depth;
-static int depthc;
-#define FB(x)           for (depthc = ++depth; depthc > 0; depthc--)\
-                          fprintf(stderr, (depth%2)?".":".");\
-                        fprintf(stderr, "* "x" {\n"); fflush(stderr);
-#define FE(x)           for (depthc = depth--; depthc > 0; depthc--)\
-                          fprintf(stderr, (depth%2)?".":".");\
-                        fprintf(stderr, "* } "x"\n"); fflush(stderr);
+#include <sys/time.h>
+#include <time.h>
+extern int depth;
+extern int depthc;
+#define PRINTTIME()	{ struct timeval tv; gettimeofday(&tv, NULL);\
+                          fprintf(stderr, "%u.%7u ", tv.tv_sec, tv.tv_usec); }
+#define PRINTDEPTH()	PRINTTIME();\
+                        for (depthc = depth; depthc > 0; depthc--)\
+                          fprintf(stderr, "    ");
+#define D1(x)    	PRINTDEPTH(); fprintf(stderr, x"\n"); fflush(stderr)
+#define D2(x,y)		PRINTDEPTH(); fprintf(stderr, x"\n", y); fflush(stderr)
+#define D3(x,y,z)	PRINTDEPTH(); fprintf(stderr, x"\n", y, z); fflush(stderr)
+#define FB(x)           PRINTDEPTH(); fprintf(stderr, x" {\n"); fflush(stderr); fflush(stderr); depth++
+#define FE(x)           depth--; PRINTDEPTH(); fprintf(stderr, "} ("x")\n"); fflush(stderr); fflush(stderr)
 #else
 #define FB
 #define FE

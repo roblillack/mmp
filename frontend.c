@@ -10,6 +10,8 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 
+#include <X11/keysym.h>
+
 #include "pixmaps/appicon.xpm"
 #include "pixmaps/appicon-playing.xpm"
 #include "pixmaps/appicon-small.xpm"
@@ -346,6 +348,7 @@ void fePlayingStopped(void *data) {
   }
 
   if (next != WANotFound) {
+    D1("Playing next one....\n");
     WMSelectListItem(f->datalist, next);
     cbPlaySong(NULL, f);
   }
@@ -435,7 +438,7 @@ int getColorStringBlue(const char *str) {
 }
 
 Bool feInit(myFrontend *f) {
-  _Xdebug=1;
+  //_Xdebug=1;
   f->dpy = XOpenDisplay(NULL);
   //scr = WMCreateSimpleApplicationScreen(dpy);
   //scr = WMOpenScreen(NULL);
@@ -806,7 +809,7 @@ void cbDoubleClick(WMWidget *self, void *data) {
 }
 
 void cbPlaySong(WMWidget *self, void *data) {
-  D2("cbPlaySong: f=0x%x\n", data);
+  FB("cbPlaySong");
   myFrontend *f = (myFrontend*) data;
   Backend *b;
   char buf[MAXPATHLEN];
@@ -815,16 +818,21 @@ void cbPlaySong(WMWidget *self, void *data) {
   if (WMGetListSelectedItem(f->datalist) == NULL ||
       WMGetListSelectedItem(f->datalist)->uflags & IsDirectory ||
       WMGetListSelectedItem(f->datalist)->uflags & IsBrokenLink) {
+    D1("WARNING: selected entry not a file.");
+    FE("cbPlaySong");
     return;
   }
 
   if ((b = GetBackendSupportingFile(f, WMGetListSelectedItem(f->datalist)->text)) == NULL) {
     printf("no suitable backend found for file: %s\n", WMGetListSelectedItem(f->datalist)->text);
+    FE("cbPlaySong");
     return;
   }
 
   if (f->activeBackend) {
+    D1("have active backend. stopping...");
     (*f->activeBackend->stopNow)();
+    D1("ok, should be dead.");
   }
 
   /* in case we have no id3-tag, set song name to filename minus .mp3 */
@@ -849,6 +857,7 @@ void cbPlaySong(WMWidget *self, void *data) {
   f->currentRatio = 0.0f;
 
   feFindCover(f);
+  FE("cbPlaySong");
 }
 
 void feFindCover(myFrontend *f) {
@@ -1028,7 +1037,7 @@ void cbSizeChanged(void *self, WMNotification *notif) {
   int w = WMWidgetWidth(f->win);
   int h = WMWidgetHeight(f->win);
   
-  if (h <= WinHeightIfSmall + 30) {
+  if (h < 150) {
     // collapse, if too small
     if (h != WinHeightIfSmall) {
       WMResizeWidget(f->win, w, WinHeightIfSmall);
