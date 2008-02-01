@@ -11,7 +11,10 @@ WINGS_CFLAGS:=$(shell pkg-config --cflags WINGs)
 BACKENDS=mpg123 mplayer
 
 # uncomment for debug version
-#DEBUG=-DDEBUG
+DEBUG=-DDEBUG
+
+# there should be no need to change something below this point.
+ICONSIZES:=16 22 32 48 64 128
 
 
 ifdef DEBUG
@@ -32,6 +35,38 @@ OBJECTS = mmp.o WMAddOns.o frontend.o $(addprefix backend_, $(addsuffix .o, $(BA
 	$(CC) -c -o $@ $(CFLAGS) $<
 
 all:    $(PROGRAM)
+
+register-menuentry: burningsoda-mmp.desktop
+	xdg-desktop-menu install $<
+
+unregister-menuentry: burningsoda-mmp.desktop
+	xdg-desktop-menu uninstall $<
+
+register-icons: $(addsuffix .png, $(addprefix icon-, $(ICONSIZES)))
+	for i in $(ICONSIZES); do\
+	  echo $$i;\
+	  bash xdg-icon-resource install --size $$i $(PREFIX)/share/mmp/icon-$$i.png burningsoda-mmp;\
+	 done
+
+unregister-icons:
+	for i in $(ICONSIZES); do\
+	  bash xdg-icon-resource uninstall --size $$i burningsoda-mmp;\
+	 done
+
+install-stuff: $(PROGRAM)
+	install -d $(PREFIX)/bin
+	install $(PROGRAM) $(PREFIX)/bin
+	install -d $(PREFIX)/share/mmp
+	install $(addsuffix .png, $(addprefix icon-, $(ICONSIZES))) $(PREFIX)/share/mmp
+	install burningsoda-mmp.desktop $(PREFIX)/share/mmp
+
+uninstall-stuff:
+	rm $(PREFIX)/bin/$(PROGRAM)
+	rm -rf $(PREFIX)/share/mmp
+
+install: install-stuff register-menuentry register-icons
+uninstall: unregister-menuentry unregister-icons uninstall-stuff
+
 
 $(PROGRAM):	$(OBJECTS)
 	$(CC) -o $(PROGRAM) $^ $(WINGS_LIBS)
