@@ -1,0 +1,10 @@
+[Desktop Entry]
+Value=1.0
+Type=Application
+Name=mmp
+GenericName=Media Player
+Comment=Watch movies and listen to tunes
+Icon=burningsoda-mmp
+Exec=%f
+Categories=AudioVideo
+#MimeType=
