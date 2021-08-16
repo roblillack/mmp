@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 
 #include <X11/keysym.h>
+#include <X11/XKBlib.h>
 
 #include "pixmaps/appicon.xpm"
 #include "pixmaps/appicon-playing.xpm"
@@ -392,7 +393,9 @@ void loadConfig(myFrontend *f) {
   if (f->settings == NULL) {
     char conf[MAXPATHLEN];
     snprintf(conf, sizeof(conf), "%s/.mmprc", getenv("HOME"));
+    printf("CONFIG: %s\n", conf);
     f->settings = WMGetDefaultsFromPath(conf);
+    WMEnableUDPeriodicSynchronization(f->settings, True);
   }
   FE("loadConfig");
 }
@@ -651,7 +654,7 @@ void cbKeyPress(XEvent *event, void *data) {
   myFrontend *f = (myFrontend*) data;
 
   if (event->type == KeyRelease) {
-    KeySym symbol = XKeycodeToKeysym(f->dpy, event->xkey.keycode, 0);
+    KeySym symbol = XkbKeycodeToKeysym(f->dpy, event->xkey.keycode, 0, event->xkey.state & ShiftMask ? 1 : 0);
     switch (symbol) {
       case ' ':
         if (f->activeBackend && f->activeBackend->pause)
@@ -696,9 +699,13 @@ Backend* GetBackendSupportingFile(myFrontend *f, const char *filename) {
 
   if (!f->backends) return NULL;
 
+return NULL;
   // TODO: what to do with files w/o extension?
   if ((ext = rindex(filename, '.')) && strlen(++ext) > 0) {
     WM_ITERATE_ARRAY(f->backends, b, i) {
+      if (!b || !b->getSupportedExtensions) {
+        continue;
+      }
       WM_ITERATE_ARRAY((*b->getSupportedExtensions)(), a, j) {
         if (strcasecmp(a, ext) == 0) return b;
       }

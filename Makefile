@@ -1,13 +1,13 @@
 CC = gcc
 VERSION=0.5
-PREFIX=/usr
+PREFIX=/usr/local
 # possible values: mpg123 mplayer
 #BACKENDS=mpg123 mplayer
-BACKENDS=mplayer
-#BACKENDS=mpg123
+#BACKENDS=mplayer
+BACKENDS=mpg123
 
-WINGS_LIBS:=$(shell pkg-config --libs WINGs) -lintl
-WINGS_CFLAGS:=$(shell pkg-config --cflags WINGs)
+WINGS_LIBS:=$(shell pkg-config --libs WINGs x11) -lm
+WINGS_CFLAGS:=$(shell pkg-config --cflags WINGs x11)
 # if pkg-config not installed/doesn't work, set the above manually to something like
 # (-lintl, -liconv may not be needed)
 #WINGS_CFLAGS:=-I. -I/usr/X11R6/include -I/usr/local/include -I/usr/pkg/include
